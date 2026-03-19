@@ -1,4 +1,4 @@
-"""Train YOLOv8l end-to-end and compare against pretrained baseline."""
+"""Train YOLOv8 for single-class product detection."""
 import argparse
 from pathlib import Path
 
@@ -10,14 +10,20 @@ torch.load = lambda *args, **kwargs: _orig_load(*args, **{**kwargs, "weights_onl
 from ultralytics import YOLO
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA_YAML = ROOT / "data" / "yolo" / "data.yaml"
+
+import numpy as np
+# Ultralytics 8.1.0 still calls np.trapz during validation, but NumPy 2 removed it.
+if not hasattr(np, "trapz"):
+    np.trapz = np.trapezoid
+
 
 
 def train(args):
+    data_yaml = ROOT / "data" / args.data / "data.yaml"
     model = YOLO(args.model)
 
     results = model.train(
-        data=str(DATA_YAML),
+        data=str(data_yaml),
         epochs=args.epochs,
         batch=args.batch,
         imgsz=args.imgsz,
@@ -26,6 +32,7 @@ def train(args):
         name=args.name,
         # Augmentation — aggressive for small dataset
         mosaic=1.0,
+        close_mosaic=20,
         mixup=0.15,
         copy_paste=0.1,
         degrees=5.0,
@@ -40,26 +47,30 @@ def train(args):
         lrf=0.01,
         warmup_epochs=5,
         weight_decay=0.0005,
-        patience=30,
+        workers=8,
+        patience=50,
         save_period=10,
         val=True,
         plots=True,
         verbose=True,
+        cos_lr=True,
     )
     return results
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="yolov8l.pt", help="Model to start from")
-    parser.add_argument("--epochs", type=int, default=100)
-    parser.add_argument("--batch", type=int, default=2)
-    parser.add_argument("--imgsz", type=int, default=640)
-    parser.add_argument("--device", default="0", help="cuda device (0, cpu, mps)")
+    parser.add_argument("--model", default="model/yolov8l.pt", help="Model to start from")
+    parser.add_argument("--epochs", type=int, default=300)
+    parser.add_argument("--batch", type=int, default=16)
+    parser.add_argument("--imgsz", type=int, default=1280)
+    parser.add_argument("--device", default="0,1", help="cuda device (0, cpu, mps)")
     parser.add_argument("--name", default="yolov8l_e2e")
     args = parser.parse_args()
 
+    data_yaml = ROOT / "data" / args.data / "data.yaml"
     print("=" * 60)
-    print(f"Training {args.model} end-to-end on {DATA_YAML}")
+    print(f"Training {args.model} on {data_yaml}")
+    print(f"Single-class detection mode" if "single" in args.data else "Multi-class mode")
     print("=" * 60)
     train(args)
