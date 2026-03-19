@@ -6,9 +6,12 @@ dist/
 wheels/
 *.egg-info
 **.tar.gz
+*.pt
+
 # Virtual environments
 .venv
 
+output/
 model/
 data/
 runs/
