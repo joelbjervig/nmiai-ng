@@ -108,13 +108,16 @@ def build_irl_lookup(
     batch_size: int = 64,
     min_crop_size: int = 20,
     max_crops_per_cat: int | None = None,
+    weights_path: Path | None = None,
 ) -> dict:
     print(f"Loading {model_name}...")
     model = timm.create_model(model_name, pretrained=False, num_classes=0)
 
-    # Load FP16 weights exported by build_embeddings.py
-    weights_path = OUTPUT_DIR / f"{model_name}_fp16.pth"
-    state_dict = torch.load(weights_path, map_location="cpu", weights_only=True)
+    # Default to the base FP16 weights; override with --weights for fine-tuned models
+    if weights_path is None:
+        weights_path = OUTPUT_DIR / f"{model_name}_fp16.pth"
+    print(f"Weights: {weights_path}")
+    state_dict = torch.load(weights_path, map_location="cpu", weights_only=False)
     state_dict = {k: v.float() for k, v in state_dict.items()}
     model.load_state_dict(state_dict)
     model = model.to(device).eval()
@@ -196,6 +199,9 @@ def main():
                         help="Skip crops smaller than this in either dimension (px)")
     parser.add_argument("--max-crops-per-cat", type=int, default=None,
                         help="Randomly subsample at most N crops per category (speeds up embedding)")
+    parser.add_argument("--weights", type=Path, default=None,
+                        help="Path to model weights (.pth). Defaults to model/<model>_fp16.pth. "
+                             "Use this to point at a fine-tuned checkpoint.")
     args = parser.parse_args()
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -207,6 +213,7 @@ def main():
         batch_size=args.batch_size,
         min_crop_size=args.min_crop_size,
         max_crops_per_cat=args.max_crops_per_cat,
+        weights_path=args.weights,
     )
 
     emb_path = OUTPUT_DIR / "ref_embeddings.npy"
