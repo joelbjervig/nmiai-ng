@@ -6,6 +6,7 @@ dist/
 wheels/
 *.egg-info
 **.tar.gz
+**.zip
 *.pt
 
 # Virtual environments
@@ -15,3 +16,4 @@ output/
 model/
 data/
 runs/
+submission_staging/
