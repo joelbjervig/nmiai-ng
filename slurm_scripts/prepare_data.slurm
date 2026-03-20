@@ -12,7 +12,7 @@ set -euo pipefail
 # Optional overrides at submit time:
 #   sbatch --export=ALL,SINGLE_CLASS=1 prepare_data.slurm
 
-SINGLE_CLASS=${SINGLE_CLASS:-1}
+SINGLE_CLASS=${SINGLE_CLASS:-0}
 
 cd "${SLURM_SUBMIT_DIR}"
 mkdir -p output
