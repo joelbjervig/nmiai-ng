@@ -209,15 +209,14 @@ def main():
         max_crops_per_cat=args.max_crops_per_cat,
     )
 
-    out_path = OUTPUT_DIR / "ref_embeddings.npz"
-    np.savez_compressed(
-        out_path,
-        embedding_matrix=lookup["embedding_matrix"],
-        category_ids=lookup["category_ids"],
-    )
+    emb_path = OUTPUT_DIR / "ref_embeddings.npy"
+    cat_path = OUTPUT_DIR / "category_ids.json"
+    np.save(emb_path, lookup["embedding_matrix"])
+    with open(cat_path, "w") as f:
+        json.dump(lookup["category_ids"].tolist(), f)
 
-    size_kb = out_path.stat().st_size / 1e3
-    print(f"\nSaved: {out_path} ({size_kb:.1f} KB)")
+    print(f"\nSaved: {emb_path} ({emb_path.stat().st_size / 1e3:.1f} KB)"
+          f" + {cat_path.name} ({cat_path.stat().st_size / 1e3:.1f} KB)")
     print(f"  {lookup['n_categories']} categories, {lookup['embed_dim']}d "
           f"(mean over {lookup['n_total_crops']} IRL crops)")
 
