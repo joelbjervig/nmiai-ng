@@ -102,7 +102,7 @@ def train(args):
         lrf=args.lrf,
         momentum=args.momentum,
         warmup_epochs=args.warmup_epochs,
-        weight_decay=0.0005,
+        weight_decay=args.weight_decay,
         workers=args.workers,
         patience=args.patience,
         save_period=10,
@@ -133,6 +133,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr0", type=float, default=0.0012)
     parser.add_argument("--lrf", type=float, default=0.01)
     parser.add_argument("--momentum", type=float, default=0.9)
+    parser.add_argument("--weight-decay", type=float, default=0.0005)
     parser.add_argument("--warmup-epochs", type=float, default=3.0)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--patience", type=int, default=60)
@@ -161,7 +162,7 @@ if __name__ == "__main__":
     print(f"Training {args.model} on {data_yaml}")
     print(f"Single-class detection mode" if "single" in args.data else "Multi-class mode")
     print(
-        f"Optimizer={args.optimizer}, lr0={args.lr0}, augmentation={args.augmentation}, "
+        f"Optimizer={args.optimizer}, lr0={args.lr0}, weight_decay={args.weight_decay}, augmentation={args.augmentation}, "
         f"degrees_override={args.degrees}, shear_override={args.shear}, perspective_override={args.perspective}, "
         f"rect={args.rect}, val_conf={args.val_conf}, val_iou={args.val_iou}, max_det={args.max_det}"
     )
