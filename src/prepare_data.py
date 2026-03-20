@@ -21,9 +21,19 @@ def coco_to_yolo(single_class: bool = False):
     random.seed(SEED)
 
     yolo_dir = ROOT / "data" / ("yolo_single" if single_class else "yolo")
+    if yolo_dir.exists():
+        shutil.rmtree(yolo_dir)
 
     with open(COCO_JSON) as f:
         coco = json.load(f)
+
+    if single_class:
+        category_to_idx = None
+        idx_to_name = {0: "product"}
+    else:
+        categories = sorted(coco["categories"], key=lambda c: c["id"])
+        category_to_idx = {category["id"]: idx for idx, category in enumerate(categories)}
+        idx_to_name = {idx: category["name"] for idx, category in enumerate(categories)}
 
     # Build image lookup
     images = {img["id"]: img for img in coco["images"]}
@@ -77,7 +87,7 @@ def coco_to_yolo(single_class: bool = False):
                 y_center = (by + bh / 2) / h
                 nw = bw / w
                 nh = bh / h
-                cls_id = 0 if single_class else ann["category_id"]
+                cls_id = 0 if single_class else category_to_idx[ann["category_id"]]
                 lines.append(f"{cls_id} {x_center:.6f} {y_center:.6f} {nw:.6f} {nh:.6f}")
                 n_anns += 1
 
@@ -87,19 +97,18 @@ def coco_to_yolo(single_class: bool = False):
 
     # Write data.yaml
     if single_class:
-        names = {0: "product"}
         nc = 1
     else:
-        categories = sorted(coco["categories"], key=lambda c: c["id"])
-        names = {c["id"]: c["name"] for c in categories}
-        nc = len(categories)
+        nc = len(idx_to_name)
 
-    yaml_content = f"""
-        train: train/images
-        val: val/images
-        nc: {nc}
-        names: {names}
-        """
+    names_lines = "\n".join(f"  {idx}: {name}" for idx, name in idx_to_name.items())
+    yaml_content = (
+        "train: train/images\n"
+        "val: val/images\n"
+        f"nc: {nc}\n"
+        "names:\n"
+        f"{names_lines}\n"
+    )
     yaml_path = yolo_dir / "data.yaml"
     yaml_path.write_text(yaml_content)
     print(f"\nWrote {yaml_path}")
