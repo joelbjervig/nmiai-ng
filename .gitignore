@@ -6,6 +6,7 @@ dist/
 wheels/
 *.egg-info
 **.tar.gz
+**.zip
 *.pt
 
 # Virtual environments
