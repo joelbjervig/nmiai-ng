@@ -337,8 +337,9 @@ def evaluate(backbone, head, loader, device):
             logits   = head(features, labels)
             loss     = F.cross_entropy(logits, labels)
 
+        raw_cos = F.linear(F.normalize(features), F.normalize(head.weight))
         total_loss += loss.item() * len(labels)
-        correct    += (logits.argmax(1) == labels).sum().item()
+        correct    += (raw_cos.argmax(1) == labels).sum().item()
         n          += len(labels)
 
     return total_loss / n, correct / n
