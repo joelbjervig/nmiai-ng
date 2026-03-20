@@ -208,15 +208,16 @@ def main():
         batch_size=args.batch_size,
     )
 
-    # Save embedding lookup
-    lookup_path = OUTPUT_DIR / "ref_embeddings.npz"
-    np.savez_compressed(
-        lookup_path,
-        embedding_matrix=lookup["embedding_matrix"],
-        category_ids=lookup["category_ids"],
-    )
-    size_kb = lookup_path.stat().st_size / 1e3
-    print(f"\nSaved lookup: {lookup_path} ({size_kb:.1f} KB)")
+    # Save embedding lookup — .npy for the matrix, .json for category IDs
+    # (.npz is not an allowed submission format)
+    emb_path = OUTPUT_DIR / "ref_embeddings.npy"
+    cat_path = OUTPUT_DIR / "category_ids.json"
+    np.save(emb_path, lookup["embedding_matrix"])
+    with open(cat_path, "w") as f:
+        json.dump(lookup["category_ids"].tolist(), f)
+    lookup_path = emb_path  # used for size reporting below
+    size_kb = emb_path.stat().st_size / 1e3
+    print(f"\nSaved lookup: {emb_path} ({size_kb:.1f} KB) + {cat_path.name} ({cat_path.stat().st_size / 1e3:.1f} KB)")
     print(f"  Shape: {lookup['embedding_matrix'].shape} ({lookup['n_total_images']} views across {lookup['n_categories']} categories, {lookup['embed_dim']}d)")
     print(f"  Per-view embeddings (no averaging) — classifier will max-pool at query time")
 

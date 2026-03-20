@@ -33,7 +33,7 @@ from dino_classifier import DINOClassifier
 MODEL_DIR = ROOT / "model"
 YOLO_WEIGHTS = MODEL_DIR / "best.pt"
 DINO_WEIGHTS = MODEL_DIR / "vit_base_patch14_dinov2_fp16.pth"
-REF_EMBEDDINGS = MODEL_DIR / "ref_embeddings.npz"
+REF_EMBEDDINGS = MODEL_DIR / "ref_embeddings.npy"
 
 # Detection hyperparameters
 CONF_THRESHOLD = 0.25
