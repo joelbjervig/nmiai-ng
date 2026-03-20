@@ -17,7 +17,7 @@ set -euo pipefail
 # To run automatically after training:
 #   sbatch --dependency=afterok:<train_job_id> slurm_scripts/package_yolo_cls.slurm
 
-RUN_DIR=${RUN_DIR:-}
+RUN_DIR=${RUN_DIR:-runs/yolov8l_multiclass2}
 
 cd "${SLURM_SUBMIT_DIR}"
 

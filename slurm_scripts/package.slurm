@@ -19,14 +19,14 @@ set -euo pipefail
 # To run after training automatically:
 #   sbatch --dependency=afterok:<train_job_id> slurm_scripts/package.slurm
 
-RUN_DIR=${RUN_DIR:-}
+RUN_DIR=${RUN_DIR:-runs/yolov8l_detect8}
 export DINO_MODEL=${DINO_MODEL:-vit_base_patch14_dinov2}
-export DINO_WEIGHTS=${DINO_WEIGHTS:-}
+export DINO_WEIGHTS=${DINO_WEIGHTS:-model/vit_base_patch14_dinov2_finetune_best.pth}
 
 cd "${SLURM_SUBMIT_DIR}"
 
 echo "Job: ${SLURM_JOB_NAME} (${SLURM_JOB_ID})"
 echo "Node: $(hostname)"
-echo "Packaging submission: run_dir=${RUN_DIR:-auto}, dino_model=${DINO_MODEL}"
+echo "Packaging submission: run_dir=${RUN_DIR:-auto}, dino_model=${DINO_MODEL}, dino_weights=${DINO_WEIGHTS}"
 
 bash package.sh ${RUN_DIR:+"$RUN_DIR"}
