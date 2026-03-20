@@ -10,7 +10,6 @@ Usage:
 """
 import argparse
 import json
-import sys
 from pathlib import Path
 
 # ── PyTorch 2.6 compatibility ───────────────────────────────────────────────
@@ -29,8 +28,7 @@ from PIL import Image
 from ultralytics import YOLO
 
 ROOT = Path(__file__).parent
-sys.path.insert(0, str(ROOT / "src"))
-from dino_classifier import DINOClassifier  # noqa: E402 (after sys.path patch)
+from dino_classifier import DINOClassifier
 
 MODEL_DIR = ROOT / "model"
 YOLO_WEIGHTS = MODEL_DIR / "best.pt"
