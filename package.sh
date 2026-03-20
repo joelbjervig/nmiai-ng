@@ -75,7 +75,7 @@ rm -rf "$STAGING"
 mkdir -p "$STAGING/model"
 
 cp "$ROOT/run.py"                  "$STAGING/run.py"
-cp "$ROOT/src/dino_classifier.py"  "$STAGING/dino_classifier.py"
+cp "$ROOT/dino_classifier.py"      "$STAGING/dino_classifier.py"
 cp "$BEST_PT"                      "$STAGING/model/best.pt"
 cp "$DINO_PT"                      "$STAGING/model/$(basename "$DINO_PT")"
 cp "$EMBEDDINGS"                   "$STAGING/model/ref_embeddings.npy"
