@@ -277,7 +277,7 @@ def load_backbone(model_name: str, weights_path: Path) -> nn.Module:
 
 # ── Training / evaluation ────────────────────────────────────────────────────
 
-def train_one_epoch(backbone, head, loader, optimizer, scaler, device, epoch):
+def train_one_epoch(backbone, head, loader, optimizer, scaler, scheduler, device, epoch):
     backbone.train()
     head.train()
     total_loss = 0.0
@@ -301,6 +301,7 @@ def train_one_epoch(backbone, head, loader, optimizer, scaler, device, epoch):
         )
         scaler.step(optimizer)
         scaler.update()
+        scheduler.step()
 
         total_loss += loss.item() * len(labels)
         correct    += (logits.argmax(1) == labels).sum().item()
@@ -477,7 +478,7 @@ def main():
 
     def lr_lambda(step):
         if step < warmup_steps:
-            return step / max(1, warmup_steps)
+            return (step + 1) / warmup_steps  # starts at 1/warmup_steps, not 0
         progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
         return max(0.0, 0.5 * (1.0 + math.cos(math.pi * progress)))
 
