@@ -85,7 +85,7 @@ mkdir -p "$STAGING/model"
 cp "$ROOT/run.py"                  "$STAGING/run.py"
 cp "$ROOT/dino_classifier.py"      "$STAGING/dino_classifier.py"
 cp "$BEST_PT"                      "$STAGING/model/best.pt"
-cp "$DINO_PT"                      "$STAGING/model/$(basename "$DINO_PT")"
+cp "$DINO_PT"                      "$STAGING/model/vit_base_patch14_dinov2_fp16.pth"
 cp "$EMBEDDINGS"                   "$STAGING/model/ref_embeddings.npy"
 cp "$CATEGORY_IDS"                 "$STAGING/model/category_ids.json"
 
