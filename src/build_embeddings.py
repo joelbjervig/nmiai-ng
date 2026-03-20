@@ -128,28 +128,26 @@ def build_lookup(
     elapsed = time.time() - t0
     print(f"Embedded {len(all_paths)} images in {elapsed:.1f}s ({len(all_paths)/elapsed:.0f} img/s)")
 
-    # Average embeddings per category, then re-normalise
-    catid_embeddings = {}
+    # Keep all per-view embeddings (don't average) — classifier will max-pool at query time
+    flat_embeddings = []
+    flat_catids = []
     idx = 0
     for catid, paths in catid_to_paths.items():
         n = len(paths)
-        embs = all_embeddings[idx:idx + n]
-        mean_emb = embs.mean(axis=0)
-        mean_emb = mean_emb / (np.linalg.norm(mean_emb) + 1e-8)
-        catid_embeddings[catid] = mean_emb
+        embs = all_embeddings[idx:idx + n]  # already L2-normalised
+        flat_embeddings.append(embs)
+        flat_catids.extend([catid] * n)
         idx += n
 
-    # Pack into arrays sorted by catid
-    sorted_catids = sorted(catid_embeddings.keys())
-    embedding_matrix = np.stack([catid_embeddings[c] for c in sorted_catids]).astype(np.float16)
-    catid_array = np.array(sorted_catids, dtype=np.int32)
+    embedding_matrix = np.concatenate(flat_embeddings, axis=0).astype(np.float16)
+    catid_array = np.array(flat_catids, dtype=np.int32)
 
     return {
-        "embedding_matrix": embedding_matrix,  # (N_cats, D) float16
-        "category_ids": catid_array,            # (N_cats,) int32
+        "embedding_matrix": embedding_matrix,  # (N_views, D) float16
+        "category_ids": catid_array,            # (N_views,) int32 — one entry per view
         "embed_dim": embed_dim,
         "model_name": model_name,
-        "n_categories": len(sorted_catids),
+        "n_categories": len(catid_to_paths),
         "n_total_images": len(all_paths),
     }, model
 
@@ -219,8 +217,8 @@ def main():
     )
     size_kb = lookup_path.stat().st_size / 1e3
     print(f"\nSaved lookup: {lookup_path} ({size_kb:.1f} KB)")
-    print(f"  Shape: {lookup['embedding_matrix'].shape} ({lookup['n_categories']} categories, {lookup['embed_dim']}d)")
-    print(f"  From {lookup['n_total_images']} reference images")
+    print(f"  Shape: {lookup['embedding_matrix'].shape} ({lookup['n_total_images']} views across {lookup['n_categories']} categories, {lookup['embed_dim']}d)")
+    print(f"  Per-view embeddings (no averaging) — classifier will max-pool at query time")
 
     # Export FP16 model weights
     model_path = export_model_fp16(model, args.model, args.device)
