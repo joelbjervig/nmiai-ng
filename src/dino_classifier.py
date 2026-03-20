@@ -11,6 +11,7 @@ Crops are padded to square before resizing to preserve aspect ratio.
 
 Designed to work within the competition sandbox (no os module, uses pathlib).
 """
+import json
 from pathlib import Path
 
 import numpy as np
@@ -63,16 +64,20 @@ class DINOClassifier:
         self.embed_dim = self.model.num_features
 
         # Load per-view reference embeddings
-        # embedding_matrix: (N_views, D) — one row per reference image
-        # category_ids:     (N_views,)   — category ID for each row
-        data = np.load(embeddings_path)
+        # embedding_matrix: (N_views, D) — one row per reference image  (.npy)
+        # category_ids:     (N_views,)   — category ID for each row     (.json sibling)
+        embedding_matrix = np.load(embeddings_path)
         self.ref_embeddings = torch.from_numpy(
-            data["embedding_matrix"].astype(np.float32)
+            embedding_matrix.astype(np.float32)
         ).half().to(device)
+
+        cat_ids_path = Path(embeddings_path).with_name("category_ids.json")
+        with open(cat_ids_path) as f:
+            cat_ids_list = json.load(f)
 
         # Pre-compute unique categories and view→category-index mapping
         # for efficient scatter_reduce max-pooling at query time
-        cat_ids_tensor = torch.from_numpy(data["category_ids"].astype(np.int64))
+        cat_ids_tensor = torch.from_numpy(np.array(cat_ids_list, dtype=np.int64))
         self.unique_cats, self.view_to_cat_idx = torch.unique(
             cat_ids_tensor, sorted=True, return_inverse=True
         )
