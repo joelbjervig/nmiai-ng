@@ -498,10 +498,9 @@ def main():
     for epoch in range(1, args.epochs + 1):
         t0 = time.time()
         train_loss, train_acc = train_one_epoch(
-            backbone, head, train_loader, optimizer, scaler, args.device, epoch
+            backbone, head, train_loader, optimizer, scaler, scheduler, args.device, epoch
         )
         val_loss, val_acc = evaluate(backbone, head, val_loader, args.device)
-        scheduler.step()
 
         mem = (torch.cuda.max_memory_allocated(args.device) / 1e9
                if args.device != "cpu" else 0.0)
