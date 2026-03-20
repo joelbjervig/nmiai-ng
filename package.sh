@@ -46,11 +46,16 @@ if [[ -z "$BEST_PT" || ! -f "$BEST_PT" ]]; then
 fi
 echo "YOLOv8 weights : $BEST_PT"
 
-# ── Find DINOv2 FP16 weights ─────────────────────────────────────────────────
-DINO_PT="$MODEL_DIR/${DINO_MODEL}_fp16.pth"
+# ── Find DINOv2 weights ───────────────────────────────────────────────────────
+if [[ -n "$DINO_WEIGHTS" ]]; then
+    DINO_PT="$ROOT/$DINO_WEIGHTS"
+else
+    DINO_PT="$MODEL_DIR/${DINO_MODEL}_fp16.pth"
+fi
 if [[ ! -f "$DINO_PT" ]]; then
-    echo "ERROR: DINOv2 FP16 weights not found: $DINO_PT"
-    echo "  Run: python src/build_embeddings.py --model $DINO_MODEL"
+    echo "ERROR: DINOv2 weights not found: $DINO_PT"
+    echo "  Default path: model/${DINO_MODEL}_fp16.pth"
+    echo "  Or override:  DINO_WEIGHTS=model/vit_base_patch14_dinov2_finetune_best.pth $0"
     exit 1
 fi
 echo "DINOv2 weights : $DINO_PT"
