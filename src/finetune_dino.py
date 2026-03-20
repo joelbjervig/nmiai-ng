@@ -303,8 +303,13 @@ def train_one_epoch(backbone, head, loader, optimizer, scaler, scheduler, device
         scaler.update()
         scheduler.step()
 
+        # Accuracy via raw cosine (no margin) — argmax on ArcFace logits is
+        # not meaningful because the margin actively lowers the target logit
+        with torch.no_grad():
+            raw_cos = F.linear(F.normalize(features), F.normalize(head.weight))
+            correct += (raw_cos.argmax(1) == labels).sum().item()
+
         total_loss += loss.item() * len(labels)
-        correct    += (logits.argmax(1) == labels).sum().item()
         n          += len(labels)
 
         bar.set_postfix(
