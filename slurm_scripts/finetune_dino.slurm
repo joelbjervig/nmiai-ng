@@ -25,6 +25,7 @@ UNFREEZE_BLOCKS=${UNFREEZE_BLOCKS:-4}
 EPOCHS=${EPOCHS:-60}
 BATCH_SIZE=${BATCH_SIZE:-64}
 IMG_SIZE=${IMG_SIZE:-518}
+GRAD_CHECKPOINT=${GRAD_CHECKPOINT:-1}
 LR_BACKBONE=${LR_BACKBONE:-2e-5}
 LR_HEAD=${LR_HEAD:-1e-4}
 WEIGHT_DECAY=${WEIGHT_DECAY:-1e-4}
@@ -47,6 +48,9 @@ if command -v nvidia-smi >/dev/null 2>&1; then
     nvidia-smi -L
 fi
 
+GRAD_CHECKPOINT_FLAG=""
+[[ "${GRAD_CHECKPOINT}" == "1" ]] && GRAD_CHECKPOINT_FLAG="--grad-checkpoint"
+
 if command -v uv >/dev/null 2>&1; then
     uv run python src/finetune_dino.py \
         --model "${MODEL}" \
@@ -61,7 +65,8 @@ if command -v uv >/dev/null 2>&1; then
         --arcface-s "${ARCFACE_S}" \
         --arcface-m "${ARCFACE_M}" \
         --min-crop-size "${MIN_CROP_SIZE}" \
-        --workers "${WORKERS}"
+        --workers "${WORKERS}" \
+        ${GRAD_CHECKPOINT_FLAG}
 else
     python src/finetune_dino.py \
         --model "${MODEL}" \
@@ -76,5 +81,6 @@ else
         --arcface-s "${ARCFACE_S}" \
         --arcface-m "${ARCFACE_M}" \
         --min-crop-size "${MIN_CROP_SIZE}" \
-        --workers "${WORKERS}"
+        --workers "${WORKERS}" \
+        ${GRAD_CHECKPOINT_FLAG}
 fi
