@@ -17,6 +17,9 @@ ROOT="$SCRIPT_DIR"
 
 RUN_DIR="${1:-}"
 DINO_MODEL="${DINO_MODEL:-vit_base_patch14_dinov2}"
+# DINO_WEIGHTS overrides the auto-derived path — use this for fine-tuned models:
+#   DINO_WEIGHTS=model/vit_base_patch14_dinov2_finetune_best.pth ./package.sh
+DINO_WEIGHTS="${DINO_WEIGHTS:-}"
 
 MODEL_DIR="$ROOT/model"
 STAGING="$ROOT/submission_staging"
