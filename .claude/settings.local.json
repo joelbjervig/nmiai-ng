@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:api.ainm.no)"
+      "WebFetch(domain:api.ainm.no)",
+      "WebFetch(domain:app.ainm.no)",
+      "Bash(xargs -I{} ls /Users/joelfinnbjervig/Documents/personligt/python_projects/nmai-ng/data/NM_NGD_product_images/{}/)",
+      "Bash(python3 src/build_embeddings.py --device mps --batch-size 16)"
     ]
   }
 }
