@@ -101,7 +101,7 @@ echo ""
 echo "Creating $OUTPUT_ZIP ..."
 rm -f "$OUTPUT_ZIP"
 cd "$STAGING"
-zip -r "$OUTPUT_ZIP" .
+python -m zipfile -c "$OUTPUT_ZIP" .
 cd "$ROOT"
 
 zip_mb=$(du -sm "$OUTPUT_ZIP" | awk '{print $1}')
