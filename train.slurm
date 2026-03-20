@@ -13,7 +13,6 @@ set -euo pipefail
 #   sbatch --export=ALL,EPOCHS=100,BATCH=4,IMGSZ=1280,MODEL=yolov8l.pt,DEVICE=0,NAME=exp1 train.slurm
 #   sbatch --gres=gpu:1 --export=ALL,DEVICE=0,DATA=yolo_single,NAME=single_class train.slurm
 #   sbatch --export=ALL,LR0=0.0012,FREEZE=12,AUGMENTATION=small_objects,MAX_DET=1000,VAL_CONF=0.1,VAL_IOU=0.55 train.slurm
-#   sbatch --export=ALL,DEGREES=3.0,SHEAR=0.5,PERSPECTIVE=0.0008 train.slurm
 
 EPOCHS=${EPOCHS:-300}
 BATCH=${BATCH:-4}
@@ -30,9 +29,6 @@ WORKERS=${WORKERS:-4}
 PATIENCE=${PATIENCE:-60}
 FREEZE=${FREEZE:-12}
 AUGMENTATION=${AUGMENTATION:-small_objects}
-DEGREES=${DEGREES:-3.0}
-SHEAR=${SHEAR:-0.5}
-PERSPECTIVE=${PERSPECTIVE:-0.0008}
 RECT=${RECT:-True}
 VAL_CONF=${VAL_CONF:-0.1}
 VAL_IOU=${VAL_IOU:-0.55}
@@ -61,7 +57,7 @@ echo "SLURM_GPUS=${SLURM_GPUS:-unset}"
 echo "SLURM_GPUS_ON_NODE=${SLURM_GPUS_ON_NODE:-unset}"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
 echo "Starting training: model=${MODEL}, data=${DATA}, epochs=${EPOCHS}, batch=${BATCH}, imgsz=${IMGSZ}, device=${DEVICE}, name=${NAME}"
-echo "Hyperparams: optimizer=${OPTIMIZER}, lr0=${LR0}, lrf=${LRF}, momentum=${MOMENTUM}, warmup_epochs=${WARMUP_EPOCHS}, workers=${WORKERS}, patience=${PATIENCE}, freeze=${FREEZE}, augmentation=${AUGMENTATION}, degrees=${DEGREES}, shear=${SHEAR}, perspective=${PERSPECTIVE}, rect=${RECT}, val_conf=${VAL_CONF}, val_iou=${VAL_IOU}, max_det=${MAX_DET}"
+echo "Hyperparams: optimizer=${OPTIMIZER}, lr0=${LR0}, lrf=${LRF}, momentum=${MOMENTUM}, warmup_epochs=${WARMUP_EPOCHS}, workers=${WORKERS}, patience=${PATIENCE}, freeze=${FREEZE}, augmentation=${AUGMENTATION}, rect=${RECT}, val_conf=${VAL_CONF}, val_iou=${VAL_IOU}, max_det=${MAX_DET}"
 
 if command -v nvidia-smi >/dev/null 2>&1; then
     echo "Visible GPUs from nvidia-smi:"
@@ -86,9 +82,6 @@ if command -v uv >/dev/null 2>&1; then
         --patience "${PATIENCE}" \
         --freeze "${FREEZE}" \
         --augmentation "${AUGMENTATION}" \
-        --degrees "${DEGREES}" \
-        --shear "${SHEAR}" \
-        --perspective "${PERSPECTIVE}" \
         --rect "${RECT}" \
         --val-conf "${VAL_CONF}" \
         --val-iou "${VAL_IOU}" \
@@ -111,9 +104,6 @@ else
         --patience "${PATIENCE}" \
         --freeze "${FREEZE}" \
         --augmentation "${AUGMENTATION}" \
-        --degrees "${DEGREES}" \
-        --shear "${SHEAR}" \
-        --perspective "${PERSPECTIVE}" \
         --rect "${RECT}" \
         --val-conf "${VAL_CONF}" \
         --val-iou "${VAL_IOU}" \
