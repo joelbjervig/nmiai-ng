@@ -18,4 +18,5 @@ dependencies = [
     "safetensors==0.4.2",
     # Dev / notebook
     "ipykernel>=7.2.0",
+    "pycocotools>=2.0.11",
 ]
