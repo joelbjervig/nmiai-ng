@@ -267,7 +267,8 @@ def freeze_backbone(model, unfreeze_blocks: int):
 
 def load_backbone(model_name: str, weights_path: Path) -> nn.Module:
     """Load DINOv2 backbone from local FP16 state dict (works offline)."""
-    model = timm.create_model(model_name, pretrained=False, num_classes=0)
+    model = timm.create_model(model_name, pretrained=False, num_classes=0,
+                               dynamic_img_size=True)
     state_dict = torch.load(weights_path, map_location="cpu", weights_only=True)
     state_dict = {k: v.float() for k, v in state_dict.items()}
     model.load_state_dict(state_dict)
