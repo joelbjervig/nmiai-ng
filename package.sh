@@ -91,14 +91,14 @@ cp "$CATEGORY_IDS"                 "$STAGING/model/category_ids.json"
 
 # ── Size check ────────────────────────────────────────────────────────────────
 yolo_mb=$(du -sm "$STAGING/model/best.pt" | awk '{print $1}')
-dino_mb=$(du -sm "$STAGING/model/$(basename "$DINO_PT")" | awk '{print $1}')
+dino_mb=$(du -sm "$STAGING/model/vit_base_patch14_dinov2_fp16.pth" | awk '{print $1}')
 emb_mb=$(du -sm  "$STAGING/model/ref_embeddings.npy" | awk '{print $1}')
 total_mb=$(du -sm "$STAGING" | awk '{print $1}')
 
 echo ""
 echo "Size budget:"
-printf "  %-36s %5s MB\n" "best.pt"                     "$yolo_mb"
-printf "  %-36s %5s MB\n" "$(basename "$DINO_PT")"      "$dino_mb"
+printf "  %-36s %5s MB\n" "best.pt"                          "$yolo_mb"
+printf "  %-36s %5s MB\n" "$(basename "$DINO_PT") → dino"   "$dino_mb"
 printf "  %-36s %5s MB\n" "ref_embeddings.npy"          "$emb_mb"
 echo "  ─────────────────────────────────────────────"
 printf "  %-36s %5s MB  (limit: %s MB)\n" "Total (uncompressed)" "$total_mb" "$MAX_SIZE_MB"

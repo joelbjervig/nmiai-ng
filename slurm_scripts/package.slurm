@@ -13,6 +13,7 @@ set -euo pipefail
 # Optional overrides at submit time:
 #   sbatch slurm_scripts/package.slurm
 #   sbatch --export=ALL,RUN_DIR=runs/yolov8l_e2e4 slurm_scripts/package.slurm
+#   sbatch --export=ALL,DINO_WEIGHTS=model/vit_base_patch14_dinov2_finetune_best.pth slurm_scripts/package.slurm
 #   sbatch --export=ALL,DINO_MODEL=vit_small_patch14_dinov2 slurm_scripts/package.slurm
 #
 # To run after training automatically:
@@ -20,6 +21,7 @@ set -euo pipefail
 
 RUN_DIR=${RUN_DIR:-}
 export DINO_MODEL=${DINO_MODEL:-vit_base_patch14_dinov2}
+export DINO_WEIGHTS=${DINO_WEIGHTS:-}
 
 cd "${SLURM_SUBMIT_DIR}"
 
