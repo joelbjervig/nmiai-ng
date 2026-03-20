@@ -18,6 +18,7 @@ Usage:
 """
 import argparse
 import json
+import random
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -106,6 +107,7 @@ def build_irl_lookup(
     img_size: int = 518,
     batch_size: int = 64,
     min_crop_size: int = 20,
+    max_crops_per_cat: int | None = None,
 ) -> dict:
     print(f"Loading {model_name}...")
     model = timm.create_model(model_name, pretrained=False, num_classes=0)
@@ -133,21 +135,24 @@ def build_irl_lookup(
 
     t0 = time.time()
     for cat_id, crop_list in tqdm(sorted(cat_to_crops.items()), desc="Categories"):
+        # Filter degenerate bboxes before loading any images
+        valid = [(img_id, bbox) for img_id, bbox in crop_list
+                 if bbox[2] >= min_crop_size and bbox[3] >= min_crop_size]
+        skipped_small += len(crop_list) - len(valid)
+
+        # Subsample before loading — avoids IO cost for discarded crops
+        if max_crops_per_cat is not None and len(valid) > max_crops_per_cat:
+            valid = random.sample(valid, max_crops_per_cat)
+
         crops = []
-        for image_id, bbox in crop_list:
+        for image_id, bbox in valid:
             img_path = image_paths.get(image_id)
             if img_path is None or not img_path.exists():
                 continue
 
-            x, y, w, h = bbox
-            # Skip degenerate crops
-            if w < min_crop_size or h < min_crop_size:
-                skipped_small += 1
-                continue
-
             img = Image.open(img_path).convert("RGB")
             iw, ih = img.size
-            # Clamp to image bounds
+            x, y, w, h = bbox
             x1 = max(0, int(x))
             y1 = max(0, int(y))
             x2 = min(iw, int(x + w))
@@ -189,6 +194,8 @@ def main():
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--min-crop-size", type=int, default=20,
                         help="Skip crops smaller than this in either dimension (px)")
+    parser.add_argument("--max-crops-per-cat", type=int, default=None,
+                        help="Randomly subsample at most N crops per category (speeds up embedding)")
     args = parser.parse_args()
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -199,6 +206,7 @@ def main():
         img_size=args.img_size,
         batch_size=args.batch_size,
         min_crop_size=args.min_crop_size,
+        max_crops_per_cat=args.max_crops_per_cat,
     )
 
     out_path = OUTPUT_DIR / "ref_embeddings.npz"

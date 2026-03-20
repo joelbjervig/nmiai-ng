@@ -18,13 +18,14 @@ MODEL=${MODEL:-vit_base_patch14_dinov2}
 IMG_SIZE=${IMG_SIZE:-518}
 BATCH=${BATCH:-64}
 MIN_CROP=${MIN_CROP:-20}
+MAX_CROPS_PER_CAT=${MAX_CROPS_PER_CAT:-10}
 
 cd "${SLURM_SUBMIT_DIR}"
 
 echo "Job: ${SLURM_JOB_NAME} (${SLURM_JOB_ID})"
 echo "Node: $(hostname)"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
-echo "Building IRL embeddings: model=${MODEL}, img_size=${IMG_SIZE}, batch=${BATCH}, min_crop=${MIN_CROP}"
+echo "Building IRL embeddings: model=${MODEL}, img_size=${IMG_SIZE}, batch=${BATCH}, min_crop=${MIN_CROP}, max_crops_per_cat=${MAX_CROPS_PER_CAT}"
 
 if command -v nvidia-smi >/dev/null 2>&1; then
     echo "Visible GPUs from nvidia-smi:"
@@ -36,11 +37,13 @@ if command -v uv >/dev/null 2>&1; then
         --model "${MODEL}" \
         --img-size "${IMG_SIZE}" \
         --batch-size "${BATCH}" \
-        --min-crop-size "${MIN_CROP}"
+        --min-crop-size "${MIN_CROP}" \
+        --max-crops-per-cat "${MAX_CROPS_PER_CAT}"
 else
     python src/build_irl_embeddings.py \
         --model "${MODEL}" \
         --img-size "${IMG_SIZE}" \
         --batch-size "${BATCH}" \
-        --min-crop-size "${MIN_CROP}"
+        --min-crop-size "${MIN_CROP}" \
+        --max-crops-per-cat "${MAX_CROPS_PER_CAT}"
 fi
