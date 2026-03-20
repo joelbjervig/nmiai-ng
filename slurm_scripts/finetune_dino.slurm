@@ -6,7 +6,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
-#SBATCH --time=06:00:00
+#SBATCH --time=12:00:00
 set -euo pipefail
 
 # Fine-tunes DINOv2 on shelf product crops using ArcFace loss.
