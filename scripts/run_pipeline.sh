@@ -61,8 +61,8 @@ job_id() { echo "$1" | awk '{print $NF}'; }
 
 DEPS_YOLO=""
 DEPS_DINO=""
-DEPS_PREDICT=""
-DEPS_PACKAGE=""
+# Collect job IDs that predict/package must wait for
+WAIT_IDS=""
 
 # ── 1. Prepare data ─────────────────────────────────────────────────────────
 if (( SKIP_PREPARE )); then
@@ -82,8 +82,7 @@ else
     OUT=$(sbatch $DEPS_YOLO $YOLO_ARGS scripts/train_yolo.slurm)
     YOLO_ID=$(job_id "$OUT")
     echo "[SUBMITTED] train_yolo   → job $YOLO_ID"
-    DEPS_PREDICT="${DEPS_PREDICT:+${DEPS_PREDICT}:}afterok:${YOLO_ID}"
-    DEPS_PACKAGE="${DEPS_PACKAGE:+${DEPS_PACKAGE}:}afterok:${YOLO_ID}"
+    WAIT_IDS="${WAIT_IDS:+${WAIT_IDS}:}${YOLO_ID}"
 fi
 
 # ── 2b. Train DINOv2 (depends on prepare, parallel with YOLO) ───────────────
@@ -93,13 +92,12 @@ else
     OUT=$(sbatch $DEPS_DINO $DINO_ARGS scripts/train_dino.slurm)
     DINO_ID=$(job_id "$OUT")
     echo "[SUBMITTED] train_dino   → job $DINO_ID"
-    DEPS_PREDICT="${DEPS_PREDICT:+${DEPS_PREDICT}:}afterok:${DINO_ID}"
-    DEPS_PACKAGE="${DEPS_PACKAGE:+${DEPS_PACKAGE}:}afterok:${DINO_ID}"
+    WAIT_IDS="${WAIT_IDS:+${WAIT_IDS}:}${DINO_ID}"
 fi
 
 # ── 3. Predict on val set (depends on yolo + dino) ──────────────────────────
-if [[ -n "$DEPS_PREDICT" ]]; then
-    PREDICT_DEP="--dependency=${DEPS_PREDICT}"
+if [[ -n "$WAIT_IDS" ]]; then
+    PREDICT_DEP="--dependency=afterok:${WAIT_IDS}"
 else
     PREDICT_DEP=""
 fi
