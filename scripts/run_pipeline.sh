@@ -114,8 +114,8 @@ fi
 
 # ── 5. Package submission (depends on yolo + dino) ──────────────────────────
 if (( ! SKIP_PACKAGE )); then
-    if [[ -n "$DEPS_PACKAGE" ]]; then
-        PACKAGE_DEP="--dependency=${DEPS_PACKAGE}"
+    if [[ -n "$WAIT_IDS" ]]; then
+        PACKAGE_DEP="--dependency=afterok:${WAIT_IDS}"
     else
         PACKAGE_DEP=""
     fi
