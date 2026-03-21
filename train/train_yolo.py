@@ -1,4 +1,4 @@
-"""Train YOLOv8 for single-class product detection."""
+"""Train YOLO for single-class product detection (supports YOLOv8 and YOLO26)."""
 import argparse
 import os
 from pathlib import Path
@@ -144,22 +144,22 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default="yolo26l.pt", help="Model to start from (e.g. yolo26l.pt, yolov8l.pt)")
     parser.add_argument("--data", default="yolo_single", help="Dataset folder under data/ containing data.yaml")
-    parser.add_argument("--epochs", type=int, default=300)
+    parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch", type=int, default=4)
     parser.add_argument("--imgsz", type=int, default=1280)
     parser.add_argument("--device", default="0", help="cuda device (0, cpu, mps)")
     parser.add_argument("--name", default="yolo26l_detect")
     parser.add_argument("--export-onnx", action="store_true", default=True,
                         help="Export best model to ONNX after training")
-    parser.add_argument("--optimizer", default="AdamW", choices=["SGD", "Adam", "AdamW", "auto"])
-    parser.add_argument("--lr0", type=float, default=0.0012)
+    parser.add_argument("--optimizer", default="auto", choices=["SGD", "Adam", "AdamW", "auto"])
+    parser.add_argument("--lr0", type=float, default=0.0005)
     parser.add_argument("--lrf", type=float, default=0.01)
     parser.add_argument("--momentum", type=float, default=0.9)
     parser.add_argument("--weight-decay", type=float, default=0.0005)
     parser.add_argument("--warmup-epochs", type=float, default=3.0)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--patience", type=int, default=60)
-    parser.add_argument("--freeze", type=int, default=12,
+    parser.add_argument("--freeze", type=int, default=0,
                         help="Number of backbone layers to freeze (YOLO26l has 24 blocks)")
     parser.add_argument("--augmentation", default="robust", choices=["small_objects", "robust", "light", "aggressive"])
     parser.add_argument("--degrees", type=float, default=None,
