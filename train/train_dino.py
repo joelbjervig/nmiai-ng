@@ -47,6 +47,7 @@ from torchvision import transforms
 from tqdm import tqdm
 
 import timm
+from peft import LoraConfig, get_peft_model
 
 ROOT       = Path(__file__).resolve().parent.parent
 COCO_JSON  = ROOT / "data" / "train" / "annotations.json"
@@ -205,16 +206,36 @@ def freeze_backbone(model, unfreeze_blocks: int):
         param.requires_grad = False
 
     total_blocks = len(model.blocks)
-    for i in range(total_blocks - unfreeze_blocks, total_blocks):
-        for param in model.blocks[i].parameters():
+    if unfreeze_blocks > 0:
+        for i in range(total_blocks - unfreeze_blocks, total_blocks):
+            for param in model.blocks[i].parameters():
+                param.requires_grad = True
+        for param in model.norm.parameters():
             param.requires_grad = True
-    for param in model.norm.parameters():
-        param.requires_grad = True
 
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total     = sum(p.numel() for p in model.parameters())
     print(f"Backbone: {total_blocks} blocks, unfreezing last {unfreeze_blocks} + norm")
     print(f"Trainable params: {trainable:,} / {total:,} ({100 * trainable / total:.1f}%)")
+
+
+def apply_lora(model, r: int = 16, alpha: int = 32, dropout: float = 0.1):
+    """Apply LoRA adapters to attention and MLP layers in the backbone.
+
+    Targets qkv, proj, fc1, fc2 in all transformer blocks.
+    After training, call model.merge_and_unload() to merge LoRA weights
+    back into the base model for a standard state_dict export.
+    """
+    config = LoraConfig(
+        r=r,
+        lora_alpha=alpha,
+        target_modules=["qkv", "proj", "fc1", "fc2"],
+        lora_dropout=dropout,
+        bias="none",
+    )
+    model = get_peft_model(model, config)
+    model.print_trainable_parameters()
+    return model
 
 
 def load_backbone(model_name: str, weights_path: Path) -> nn.Module:
@@ -356,7 +377,7 @@ def make_weighted_sampler(dataset: ProductCropDataset) -> WeightedRandomSampler:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model",            default="vit_base_patch14_dinov2")
-    parser.add_argument("--unfreeze-blocks",  type=int,   default=2)
+    parser.add_argument("--unfreeze-blocks",  type=int,   default=0)
     parser.add_argument("--epochs",           type=int,   default=60)
     parser.add_argument("--batch-size",       type=int,   default=64)
     parser.add_argument("--img-size",         type=int,   default=518,
@@ -369,6 +390,15 @@ def main():
                         help="Label smoothing for CrossEntropyLoss (0.0 = off)")
     parser.add_argument("--dropout",          type=float, default=0.1,
                         help="Dropout on features before classification head (0.0 = off)")
+    # LoRA
+    parser.add_argument("--use-lora",         action="store_true",
+                        help="Use LoRA adapters instead of unfreezing blocks")
+    parser.add_argument("--lora-r",           type=int,   default=16,
+                        help="LoRA rank")
+    parser.add_argument("--lora-alpha",       type=int,   default=32,
+                        help="LoRA alpha (scaling = alpha/r)")
+    parser.add_argument("--lora-dropout",     type=float, default=0.1,
+                        help="LoRA dropout")
     parser.add_argument("--min-crop-size",    type=int,   default=20)
     parser.add_argument("--workers",          type=int,   default=4)
     parser.add_argument("--grad-checkpoint",  action="store_true",
@@ -432,13 +462,23 @@ def main():
         backbone = load_backbone(args.model, weights_path)
 
     backbone = backbone.to(args.device)
-    freeze_backbone(backbone, args.unfreeze_blocks)
-
-    if args.grad_checkpoint:
-        backbone.set_grad_checkpointing(True)
-        print("Gradient checkpointing: enabled")
-
     embed_dim = backbone.num_features
+
+    if args.use_lora:
+        # LoRA: freeze everything, add small trainable adapters
+        freeze_backbone(backbone, unfreeze_blocks=0)
+        if args.grad_checkpoint:
+            backbone.set_grad_checkpointing(True)
+            print("Gradient checkpointing: enabled")
+        backbone = apply_lora(backbone, r=args.lora_r, alpha=args.lora_alpha,
+                              dropout=args.lora_dropout)
+    else:
+        # Classic: unfreeze last N blocks
+        freeze_backbone(backbone, args.unfreeze_blocks)
+        if args.grad_checkpoint:
+            backbone.set_grad_checkpointing(True)
+            print("Gradient checkpointing: enabled")
+
     head = nn.Linear(embed_dim, num_classes).to(args.device)
 
     # ── Optimizer & scheduler ─────────────────────────────────────────────────
@@ -465,7 +505,10 @@ def main():
 
     print(f"\nModel   : {args.model}  ({num_classes} classes, embed_dim={embed_dim})")
     print(f"Head    : Linear({embed_dim}, {num_classes}) + CrossEntropyLoss(label_smoothing={args.label_smoothing})")
-    print(f"Dropout : {args.dropout}  |  unfreeze_blocks: {args.unfreeze_blocks}")
+    if args.use_lora:
+        print(f"LoRA    : r={args.lora_r}, alpha={args.lora_alpha}, dropout={args.lora_dropout}")
+    else:
+        print(f"Dropout : {args.dropout}  |  unfreeze_blocks: {args.unfreeze_blocks}")
     print(f"img_size: {args.img_size}  |  batch: {args.batch_size}  |  epochs: {args.epochs}")
     print(f"crop_cache: {'disabled' if args.no_crop_cache else args.crop_cache_dir}")
     print("=" * 60)
@@ -503,6 +546,12 @@ def main():
     ckpt = torch.load(best_ckpt, map_location="cpu", weights_only=True)
     backbone.load_state_dict(ckpt["backbone"])
     head.load_state_dict(ckpt["head"])
+
+    if args.use_lora:
+        # Merge LoRA weights into base model for a clean state_dict export
+        print("Merging LoRA weights into backbone...")
+        backbone = backbone.merge_and_unload()
+
     export_fp16(backbone, args.model, OUTPUT_DIR)
     export_cls_head(head, catid_to_label, OUTPUT_DIR)
 

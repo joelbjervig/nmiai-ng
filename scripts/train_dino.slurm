@@ -10,14 +10,15 @@
 set -euo pipefail
 
 # Fine-tunes DINOv2 on shelf product crops with supervised classification head.
+# Supports LoRA adapters (default) or classic block unfreezing.
 # Exports backbone FP16 + classifier head weights.
 #
 # Usage:
-#   sbatch scripts/train_dino.slurm
-#   sbatch --export=ALL,UNFREEZE_BLOCKS=2,EPOCHS=20,BATCH_SIZE=256 scripts/train_dino.slurm
+#   sbatch scripts/train_dino.slurm                                    # LoRA (default)
+#   sbatch --export=ALL,USE_LORA=0,UNFREEZE_BLOCKS=2 scripts/train_dino.slurm  # classic
 
 MODEL=${MODEL:-vit_base_patch14_dinov2}
-UNFREEZE_BLOCKS=${UNFREEZE_BLOCKS:-2}
+UNFREEZE_BLOCKS=${UNFREEZE_BLOCKS:-0}
 EPOCHS=${EPOCHS:-20}
 BATCH_SIZE=${BATCH_SIZE:-256}
 IMG_SIZE=${IMG_SIZE:-518}
@@ -28,6 +29,10 @@ WEIGHT_DECAY=${WEIGHT_DECAY:-1e-4}
 WARMUP_EPOCHS=${WARMUP_EPOCHS:-5}
 LABEL_SMOOTHING=${LABEL_SMOOTHING:-0.1}
 DROPOUT=${DROPOUT:-0.1}
+USE_LORA=${USE_LORA:-1}
+LORA_R=${LORA_R:-16}
+LORA_ALPHA=${LORA_ALPHA:-32}
+LORA_DROPOUT=${LORA_DROPOUT:-0.1}
 MIN_CROP_SIZE=${MIN_CROP_SIZE:-20}
 WORKERS=${WORKERS:-4}
 
@@ -37,7 +42,12 @@ echo "Job: ${SLURM_JOB_NAME} (${SLURM_JOB_ID})"
 echo "Node: $(hostname)"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
 echo "Config: model=${MODEL}, unfreeze_blocks=${UNFREEZE_BLOCKS}, epochs=${EPOCHS}, batch=${BATCH_SIZE}, img_size=${IMG_SIZE}"
-echo "LR: backbone=${LR_BACKBONE}, head=${LR_HEAD}  label_smoothing=${LABEL_SMOOTHING}  dropout=${DROPOUT}"
+if [[ "${USE_LORA}" == "1" ]]; then
+    echo "LoRA: r=${LORA_R}, alpha=${LORA_ALPHA}, dropout=${LORA_DROPOUT}"
+else
+    echo "Classic: unfreeze_blocks=${UNFREEZE_BLOCKS}, dropout=${DROPOUT}"
+fi
+echo "LR: backbone=${LR_BACKBONE}, head=${LR_HEAD}  label_smoothing=${LABEL_SMOOTHING}"
 
 if command -v nvidia-smi >/dev/null 2>&1; then
     echo "Visible GPUs:"
@@ -46,6 +56,9 @@ fi
 
 GRAD_CHECKPOINT_FLAG=""
 [[ "${GRAD_CHECKPOINT}" == "1" ]] && GRAD_CHECKPOINT_FLAG="--grad-checkpoint"
+
+LORA_FLAG=""
+[[ "${USE_LORA}" == "1" ]] && LORA_FLAG="--use-lora"
 
 if command -v uv >/dev/null 2>&1; then
     uv run python train/train_dino.py \
@@ -60,9 +73,13 @@ if command -v uv >/dev/null 2>&1; then
         --warmup-epochs "${WARMUP_EPOCHS}" \
         --label-smoothing "${LABEL_SMOOTHING}" \
         --dropout "${DROPOUT}" \
+        --lora-r "${LORA_R}" \
+        --lora-alpha "${LORA_ALPHA}" \
+        --lora-dropout "${LORA_DROPOUT}" \
         --min-crop-size "${MIN_CROP_SIZE}" \
         --workers "${WORKERS}" \
-        ${GRAD_CHECKPOINT_FLAG}
+        ${GRAD_CHECKPOINT_FLAG} \
+        ${LORA_FLAG}
 else
     python train/train_dino.py \
         --model "${MODEL}" \
@@ -76,7 +93,11 @@ else
         --warmup-epochs "${WARMUP_EPOCHS}" \
         --label-smoothing "${LABEL_SMOOTHING}" \
         --dropout "${DROPOUT}" \
+        --lora-r "${LORA_R}" \
+        --lora-alpha "${LORA_ALPHA}" \
+        --lora-dropout "${LORA_DROPOUT}" \
         --min-crop-size "${MIN_CROP_SIZE}" \
         --workers "${WORKERS}" \
-        ${GRAD_CHECKPOINT_FLAG}
+        ${GRAD_CHECKPOINT_FLAG} \
+        ${LORA_FLAG}
 fi
