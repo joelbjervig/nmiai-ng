@@ -16,7 +16,7 @@ set -euo pipefail
 #   sbatch --export=ALL,DEGREES=3.0,SHEAR=0.5,PERSPECTIVE=0.0008 train.slurm
 
 EPOCHS=${EPOCHS:-100}
-BATCH=${BATCH:-4}
+BATCH=${BATCH:-8}
 IMGSZ=${IMGSZ:-1280}
 MODEL=${MODEL:-yolo26l.pt}
 NAME=${NAME:-yolo26l_detect}
