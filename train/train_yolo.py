@@ -106,6 +106,8 @@ def train(args):
     if args.perspective is not None:
         aug_kwargs["perspective"] = args.perspective
 
+    single_cls = "single" in args.data
+
     results = model.train(
         data=str(data_yaml),
         epochs=args.epochs,
@@ -114,6 +116,7 @@ def train(args):
         device=args.device,
         project=str(ROOT / "runs"),
         name=args.name,
+        single_cls=single_cls,
         optimizer=args.optimizer,
         lr0=args.lr0,
         lrf=args.lrf,
@@ -156,8 +159,8 @@ if __name__ == "__main__":
     parser.add_argument("--warmup-epochs", type=float, default=3.0)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--patience", type=int, default=60)
-    parser.add_argument("--freeze", type=int, default=16,
-                        help="Number of backbone layers to freeze (higher = more pretrained features kept)")
+    parser.add_argument("--freeze", type=int, default=12,
+                        help="Number of backbone layers to freeze (YOLO26l has 24 blocks)")
     parser.add_argument("--augmentation", default="robust", choices=["small_objects", "robust", "light", "aggressive"])
     parser.add_argument("--degrees", type=float, default=None,
                         help="Override rotation augmentation in degrees")
