@@ -291,7 +291,7 @@ def main():
                 "image_id": image_id,
                 "category_id": cls["category_id"],
                 "bbox": [float(x1), float(y1), float(x2 - x1), float(y2 - y1)],
-                "score": float(conf),
+                "score": float(conf * cls["score"]),
             })
 
     print(f"Total predictions: {len(predictions)}")
