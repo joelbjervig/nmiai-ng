@@ -16,6 +16,7 @@ dependencies = [
     "scipy==1.12.0",
     "scikit-learn==1.4.0",
     "safetensors==0.4.2",
+    "ensemble-boxes>=1.0.9",
     # Dev / notebook
     "ipykernel>=7.2.0",
     "pycocotools>=2.0.11",
