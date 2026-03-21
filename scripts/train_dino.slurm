@@ -5,7 +5,7 @@
 #SBATCH --partition=long
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=16G
+#SBATCH --mem=32G
 #SBATCH --time=12:00:00
 set -euo pipefail
 
@@ -19,8 +19,8 @@ set -euo pipefail
 MODEL=${MODEL:-vit_base_patch14_dinov2}
 UNFREEZE_BLOCKS=${UNFREEZE_BLOCKS:-4}
 EPOCHS=${EPOCHS:-60}
-BATCH_SIZE=${BATCH_SIZE:-64}
-IMG_SIZE=${IMG_SIZE:-336}
+BATCH_SIZE=${BATCH_SIZE:-32}
+IMG_SIZE=${IMG_SIZE:-518}
 GRAD_CHECKPOINT=${GRAD_CHECKPOINT:-1}
 LR_BACKBONE=${LR_BACKBONE:-2e-5}
 LR_HEAD=${LR_HEAD:-1e-4}
