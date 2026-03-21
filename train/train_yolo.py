@@ -127,8 +127,8 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=300)
     parser.add_argument("--batch", type=int, default=4)
     parser.add_argument("--imgsz", type=int, default=1280)
-    parser.add_argument("--device", default="0,1", help="cuda device (0, cpu, mps)")
-    parser.add_argument("--name", default="yolov8l_e2e")
+    parser.add_argument("--device", default="0", help="cuda device (0, cpu, mps)")
+    parser.add_argument("--name", default="yolov8l_detect")
     parser.add_argument("--optimizer", default="AdamW", choices=["SGD", "Adam", "AdamW", "auto"])
     parser.add_argument("--lr0", type=float, default=0.0012)
     parser.add_argument("--lrf", type=float, default=0.01)
@@ -146,7 +146,7 @@ if __name__ == "__main__":
                         help="Override shear augmentation in degrees")
     parser.add_argument("--perspective", type=float, default=None,
                         help="Override perspective augmentation strength")
-    parser.add_argument("--rect", type=str2bool, default=True,
+    parser.add_argument("--rect", type=str2bool, default=False,
                         help="Use rectangular batches to preserve image aspect ratio")
     parser.add_argument("--val-conf", type=float, default=0.1,
                         help="Validation confidence threshold for dense scenes")
