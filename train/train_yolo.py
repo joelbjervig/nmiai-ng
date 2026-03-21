@@ -49,6 +49,23 @@ def train(args):
             "hsv_s": 0.4,
             "hsv_v": 0.4,
         }
+    elif args.augmentation == "robust":
+        # Maximize generalization to unseen stores/lighting/angles
+        aug_kwargs = {
+            "mosaic": 0.5,
+            "close_mosaic": max(10, int(args.epochs * 0.3)),
+            "mixup": 0.1,
+            "copy_paste": 0.15,
+            "degrees": 3.0,
+            "shear": 0.3,
+            "perspective": 0.0005,
+            "translate": 0.05,
+            "scale": 0.3,
+            "fliplr": 0.5,
+            "hsv_h": 0.02,
+            "hsv_s": 0.4,
+            "hsv_v": 0.4,
+        }
     elif args.augmentation == "light":
         aug_kwargs = {
             "mosaic": 0.5,
@@ -122,13 +139,15 @@ def train(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="model/yolov8l.pt", help="Model to start from")
+    parser.add_argument("--model", default="yolo26l.pt", help="Model to start from (e.g. yolo26l.pt, yolov8l.pt)")
     parser.add_argument("--data", default="yolo_single", help="Dataset folder under data/ containing data.yaml")
     parser.add_argument("--epochs", type=int, default=300)
     parser.add_argument("--batch", type=int, default=4)
     parser.add_argument("--imgsz", type=int, default=1280)
     parser.add_argument("--device", default="0", help="cuda device (0, cpu, mps)")
-    parser.add_argument("--name", default="yolov8l_detect")
+    parser.add_argument("--name", default="yolo26l_detect")
+    parser.add_argument("--export-onnx", action="store_true", default=True,
+                        help="Export best model to ONNX after training")
     parser.add_argument("--optimizer", default="AdamW", choices=["SGD", "Adam", "AdamW", "auto"])
     parser.add_argument("--lr0", type=float, default=0.0012)
     parser.add_argument("--lrf", type=float, default=0.01)
@@ -137,9 +156,9 @@ if __name__ == "__main__":
     parser.add_argument("--warmup-epochs", type=float, default=3.0)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--patience", type=int, default=60)
-    parser.add_argument("--freeze", type=int, default=12,
-                        help="Number of backbone layers to freeze for finetuning warm-start")
-    parser.add_argument("--augmentation", default="small_objects", choices=["small_objects", "light", "aggressive"])
+    parser.add_argument("--freeze", type=int, default=16,
+                        help="Number of backbone layers to freeze (higher = more pretrained features kept)")
+    parser.add_argument("--augmentation", default="robust", choices=["small_objects", "robust", "light", "aggressive"])
     parser.add_argument("--degrees", type=float, default=None,
                         help="Override rotation augmentation in degrees")
     parser.add_argument("--shear", type=float, default=None,
@@ -167,4 +186,14 @@ if __name__ == "__main__":
         f"rect={args.rect}, val_conf={args.val_conf}, val_iou={args.val_iou}, max_det={args.max_det}"
     )
     print("=" * 60)
-    train(args)
+    results = train(args)
+
+    if args.export_onnx:
+        best_pt = ROOT / "runs" / args.name / "weights" / "best.pt"
+        if best_pt.exists():
+            print(f"\nExporting {best_pt} to ONNX...")
+            best_model = YOLO(str(best_pt))
+            onnx_path = best_model.export(format="onnx", imgsz=args.imgsz, opset=17, half=True)
+            print(f"ONNX exported → {onnx_path}")
+        else:
+            print(f"WARNING: best.pt not found at {best_pt}, skipping ONNX export")

@@ -4,11 +4,11 @@
 # Run on the HPC after train_yolo and train_dino have completed.
 #
 # Usage:
-#   ./package.sh                          # auto-detect latest run in runs/
-#   ./package.sh runs/yolov8l_e2e4        # use a specific run directory
+#   ./scripts/package.sh                          # auto-detect latest run
+#   ./scripts/package.sh runs/yolo26l_detect       # specific run directory
 #
 # Environment overrides:
-#   DINO_MODEL=vit_small_patch14_dinov2 ./package.sh   # if you used a smaller model
+#   DINO_MODEL=vit_small_patch14_dinov2 ./scripts/package.sh
 
 set -euo pipefail
 
@@ -16,11 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 RUN_DIR="${1:-}"
-RUN_DIR=${RUN_DIR:-runs/yolov8l_detect11}
-
 DINO_MODEL="${DINO_MODEL:-vit_base_patch14_dinov2}"
-# DINO_WEIGHTS overrides the auto-derived path — use this for fine-tuned models:
-#   DINO_WEIGHTS=model/vit_base_patch14_dinov2_finetune_best.pth ./package.sh
 DINO_WEIGHTS="${DINO_WEIGHTS:-}"
 
 MODEL_DIR="$ROOT/model"
@@ -31,22 +27,26 @@ MAX_SIZE_MB=420
 echo "=== NorgesGruppen Submission Packager ==="
 echo ""
 
-# ── Find best.pt ─────────────────────────────────────────────────────────────
+# ── Find YOLO ONNX weights ──────────────────────────────────────────────────
 if [[ -n "$RUN_DIR" ]]; then
-    BEST_PT="$ROOT/$RUN_DIR/weights/best.pt"
+    BEST_ONNX="$ROOT/$RUN_DIR/weights/best.onnx"
 else
-    # Auto-detect: most recently modified best.pt under runs/
-    BEST_PT=$(find "$ROOT/runs" -name "best.pt" -printf "%T@ %p\n" 2>/dev/null \
+    # Auto-detect: most recently modified best.onnx under runs/
+    BEST_ONNX=$(find "$ROOT/runs" -name "best.onnx" -printf "%T@ %p\n" 2>/dev/null \
               | sort -n | tail -1 | awk '{print $2}')
 fi
 
-if [[ -z "$BEST_PT" || ! -f "$BEST_PT" ]]; then
-    echo "ERROR: best.pt not found."
-    echo "  Train a model first, or pass the run dir as an argument:"
-    echo "  $0 runs/yolov8l_e2e4"
+# Fallback to model/best.onnx
+if [[ -z "$BEST_ONNX" || ! -f "$BEST_ONNX" ]]; then
+    BEST_ONNX="$MODEL_DIR/best.onnx"
+fi
+
+if [[ ! -f "$BEST_ONNX" ]]; then
+    echo "ERROR: best.onnx not found."
+    echo "  Train a YOLO model with --export-onnx, or place best.onnx in model/"
     exit 1
 fi
-echo "YOLOv8 weights : $BEST_PT"
+echo "YOLO ONNX      : $BEST_ONNX"
 
 # ── Find DINOv2 weights ───────────────────────────────────────────────────────
 if [[ -n "$DINO_WEIGHTS" ]]; then
@@ -56,8 +56,6 @@ else
 fi
 if [[ ! -f "$DINO_PT" ]]; then
     echo "ERROR: DINOv2 weights not found: $DINO_PT"
-    echo "  Default path: model/${DINO_MODEL}_fp16.pth"
-    echo "  Or override:  DINO_WEIGHTS=model/vit_base_patch14_dinov2_finetune_best.pth $0"
     exit 1
 fi
 echo "DINOv2 weights : $DINO_PT"
@@ -79,29 +77,27 @@ mkdir -p "$STAGING/model"
 
 cp "$ROOT/run.py"                  "$STAGING/run.py"
 cp "$ROOT/dino_classifier.py"      "$STAGING/dino_classifier.py"
-cp "$BEST_PT"                      "$STAGING/model/best.pt"
+cp "$BEST_ONNX"                    "$STAGING/model/best.onnx"
 cp "$DINO_PT"                      "$STAGING/model/vit_base_patch14_dinov2_fp16.pth"
 cp "$CLS_HEAD"                     "$STAGING/model/cls_head.npy"
 
 # ── Size check ────────────────────────────────────────────────────────────────
-yolo_mb=$(du -sm "$STAGING/model/best.pt" | awk '{print $1}')
+yolo_mb=$(du -sm "$STAGING/model/best.onnx" | awk '{print $1}')
 dino_mb=$(du -sm "$STAGING/model/vit_base_patch14_dinov2_fp16.pth" | awk '{print $1}')
 head_mb=$(du -sm "$STAGING/model/cls_head.npy" | awk '{print $1}')
 total_mb=$(du -sm "$STAGING" | awk '{print $1}')
 
 echo ""
 echo "Size budget:"
-printf "  %-36s %5s MB\n" "best.pt"                          "$yolo_mb"
-printf "  %-36s %5s MB\n" "$(basename "$DINO_PT") → dino"   "$dino_mb"
-printf "  %-36s %5s MB\n" "cls_head.npy"                     "$head_mb"
+printf "  %-36s %5s MB\n" "best.onnx"                          "$yolo_mb"
+printf "  %-36s %5s MB\n" "$(basename "$DINO_PT") → dino"     "$dino_mb"
+printf "  %-36s %5s MB\n" "cls_head.npy"                       "$head_mb"
 echo "  ─────────────────────────────────────────────"
 printf "  %-36s %5s MB  (limit: %s MB)\n" "Total (uncompressed)" "$total_mb" "$MAX_SIZE_MB"
 
 if (( total_mb > MAX_SIZE_MB )); then
     echo ""
     echo "ERROR: Staging exceeds ${MAX_SIZE_MB} MB limit (${total_mb} MB)."
-    echo "  Try a smaller DINOv2 variant:"
-    echo "  DINO_MODEL=vit_small_patch14_dinov2 $0"
     rm -rf "$STAGING"
     exit 1
 fi
