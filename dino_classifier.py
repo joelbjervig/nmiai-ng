@@ -1,22 +1,17 @@
-"""DINOv2 embedding-based product classifier for inference.
+"""DINOv2 supervised product classifier for inference.
 
-Loads the FP16 DINOv2 model and pre-computed reference embeddings, then
-classifies cropped product images via cosine similarity lookup.
-
-Reference embeddings are stored per-view (front, back, left, right, etc.).
-Classification uses max cosine similarity across all views of a category,
-which is more discriminative than averaging views into a single vector.
+Loads the fine-tuned DINOv2 backbone (FP16) and a trained linear classification
+head, then classifies cropped product images via a forward pass.
 
 Crops are padded to square before resizing to preserve aspect ratio.
 
 Designed to work within the competition sandbox (no os module, uses pathlib).
 """
-import json
 from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn.functional as F
+import torch.nn as nn
 from torchvision import transforms
 from PIL import Image
 
@@ -37,16 +32,16 @@ class PadToSquare:
 
 
 class DINOClassifier:
-    """Two-step classifier: embed crop → nearest-neighbour in reference table.
+    """DINOv2 backbone + linear classification head.
 
-    Reference embeddings are stored per-view (not averaged per category).
-    Classification uses max cosine similarity across all views of a category.
+    Loads fine-tuned backbone weights and a trained Linear(768, num_classes)
+    head exported by train/train_dino.py.
     """
 
     def __init__(
         self,
         model_path: Path,
-        embeddings_path: Path,
+        head_path: Path,
         model_name: str = "vit_base_patch14_dinov2",
         img_size: int = 518,
         device: str = "cuda",
@@ -54,35 +49,26 @@ class DINOClassifier:
         self.device = device
         self.img_size = img_size
 
-        # Load DINOv2 model from FP16 weights
+        # Load DINOv2 backbone from FP16 weights
         self.model = timm.create_model(model_name, pretrained=False, num_classes=0)
         state_dict = torch.load(model_path, map_location="cpu", weights_only=True)
         state_dict = {k: v.float() for k, v in state_dict.items()}
         self.model.load_state_dict(state_dict)
         self.model = self.model.to(device).eval().half()
 
-        self.embed_dim = self.model.num_features
+        embed_dim = self.model.num_features
 
-        # Load per-view reference embeddings
-        # embedding_matrix: (N_views, D) — one row per reference image  (.npy)
-        # category_ids:     (N_views,)   — category ID for each row     (.json sibling)
-        embedding_matrix = np.load(embeddings_path)
-        self.ref_embeddings = torch.from_numpy(
-            embedding_matrix.astype(np.float32)
-        ).half().to(device)
+        # Load trained classification head
+        head_data = np.load(head_path, allow_pickle=True).item()
+        weight = torch.from_numpy(head_data["weight"].astype(np.float32))
+        bias = torch.from_numpy(head_data["bias"].astype(np.float32))
+        self.label_to_catid = {int(k): int(v) for k, v in head_data["label_to_catid"].items()}
 
-        cat_ids_path = Path(embeddings_path).with_name("category_ids.json")
-        with open(cat_ids_path) as f:
-            cat_ids_list = json.load(f)
-
-        # Pre-compute unique categories and view→category-index mapping
-        # for efficient scatter_reduce max-pooling at query time
-        cat_ids_tensor = torch.from_numpy(np.array(cat_ids_list, dtype=np.int64))
-        self.unique_cats, self.view_to_cat_idx = torch.unique(
-            cat_ids_tensor, sorted=True, return_inverse=True
-        )
-        self.view_to_cat_idx = self.view_to_cat_idx.to(device)
-        self.n_cats = len(self.unique_cats)
+        num_classes = weight.shape[0]
+        self.head = nn.Linear(embed_dim, num_classes)
+        self.head.weight.data = weight
+        self.head.bias.data = bias
+        self.head = self.head.to(device).eval().half()
 
         # Aspect-ratio-preserving preprocessing: pad to square, then resize
         self.transform = transforms.Compose([
@@ -92,71 +78,32 @@ class DINOClassifier:
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ])
 
-        print(f"DINOClassifier ready: {model_name}, {self.n_cats} categories "
-              f"({len(self.ref_embeddings)} views), device={device}")
+        print(f"DINOClassifier ready: {model_name}, {num_classes} classes, device={device}")
 
     @torch.no_grad()
-    def embed_crops(self, crops: list[Image.Image], batch_size: int = 64) -> torch.Tensor:
-        """Embed a list of PIL crops → (N, D) normalised FP16 tensor."""
-        all_embs = []
-        for i in range(0, len(crops), batch_size):
-            batch_crops = crops[i:i + batch_size]
-            tensors = [self.transform(c.convert("RGB")) for c in batch_crops]
-            batch = torch.stack(tensors).to(self.device).half()
-            features = self.model(batch)
-            features = F.normalize(features, p=2, dim=-1)
-            all_embs.append(features)
-        return torch.cat(all_embs, dim=0)
-
     def classify(self, crops: list[Image.Image], batch_size: int = 64) -> list[dict]:
         """Classify cropped product images.
 
-        Computes cosine similarity against all per-view reference embeddings,
-        then max-pools over views to get the best score per category.
-
         Returns list of dicts with keys:
             - category_id: int (COCO category ID, 0-355)
-            - score: float (max cosine similarity across views, 0-1)
+            - score: float (softmax confidence, 0-1)
         """
         if not crops:
             return []
 
-        embeddings = self.embed_crops(crops, batch_size)  # (N, D)
-        N = len(crops)
+        all_results = []
+        for i in range(0, len(crops), batch_size):
+            batch_crops = crops[i:i + batch_size]
+            tensors = [self.transform(c.convert("RGB")) for c in batch_crops]
+            batch = torch.stack(tensors).to(self.device).half()
 
-        # Cosine similarity against all per-view reference embeddings
-        similarities = embeddings @ self.ref_embeddings.T  # (N, N_views)
+            features = self.model(batch)
+            logits = self.head(features)
+            probs = logits.softmax(dim=-1)
 
-        # Max-pool over views per category
-        # cat_sims[i, j] = max similarity of query i over all views of category j
-        idx = self.view_to_cat_idx.unsqueeze(0).expand(N, -1)  # (N, N_views)
-        cat_sims = torch.full(
-            (N, self.n_cats), float("-inf"), device=self.device, dtype=torch.float16
-        )
-        cat_sims.scatter_reduce_(1, idx, similarities, reduce="amax", include_self=True)
+            scores, labels = probs.max(dim=-1)
+            for score, label in zip(scores.cpu(), labels.cpu()):
+                cat_id = self.label_to_catid[label.item()]
+                all_results.append({"category_id": cat_id, "score": float(score)})
 
-        best_idx = cat_sims.argmax(dim=1)           # (N,)
-        scores = cat_sims[range(N), best_idx]       # (N,)
-        cat_ids = self.unique_cats[best_idx.cpu()]  # (N,)
-
-        return [
-            {"category_id": int(cat_ids[i]), "score": float(scores[i])}
-            for i in range(N)
-        ]
-
-    def classify_with_fallback(
-        self,
-        crops: list[Image.Image],
-        confidence_threshold: float = 0.3,
-        fallback_category_id: int = 0,
-        batch_size: int = 64,
-    ) -> list[dict]:
-        """Classify with fallback for low-confidence predictions.
-
-        If max cosine similarity is below threshold, fall back to a default category.
-        """
-        results = self.classify(crops, batch_size)
-        for r in results:
-            if r["score"] < confidence_threshold:
-                r["category_id"] = fallback_category_id
-        return results
+        return all_results

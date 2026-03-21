@@ -12,21 +12,20 @@ set -euo pipefail
 #
 # Optional overrides at submit time:
 #   sbatch scripts/package.slurm
-#   sbatch --export=ALL,RUN_DIR=runs/yolov8l_e2e4 scripts/package.slurm
-#   sbatch --export=ALL,DINO_WEIGHTS=model/vit_base_patch14_dinov2_finetune_best.pth scripts/package.slurm
-#   sbatch --export=ALL,DINO_MODEL=vit_small_patch14_dinov2 scripts/package.slurm
+#   sbatch --export=ALL,RUN_DIR=runs/yolov8l_detect scripts/package.slurm
+#   sbatch --export=ALL,DINO_WEIGHTS=model/custom.pth scripts/package.slurm
 #
 # To run after training automatically:
 #   sbatch --dependency=afterok:<train_job_id> scripts/package.slurm
 
-RUN_DIR=${RUN_DIR:-runs/yolov8l_detect8}
+RUN_DIR=${RUN_DIR:-}
 export DINO_MODEL=${DINO_MODEL:-vit_base_patch14_dinov2}
-export DINO_WEIGHTS=${DINO_WEIGHTS:-model/vit_base_patch14_dinov2_finetune_best.pth}
+export DINO_WEIGHTS=${DINO_WEIGHTS:-}
 
 cd "${SLURM_SUBMIT_DIR}"
 
 echo "Job: ${SLURM_JOB_NAME} (${SLURM_JOB_ID})"
 echo "Node: $(hostname)"
-echo "Packaging submission: run_dir=${RUN_DIR:-auto}, dino_model=${DINO_MODEL}, dino_weights=${DINO_WEIGHTS}"
+echo "Packaging submission: run_dir=${RUN_DIR:-auto}, dino_model=${DINO_MODEL}, dino_weights=${DINO_WEIGHTS:-auto}"
 
 bash scripts/package.sh ${RUN_DIR:+"$RUN_DIR"}

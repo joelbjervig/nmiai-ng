@@ -2,8 +2,7 @@
 
 Two-stage pipeline:
   1. YOLOv8 (single-class, fine-tuned) detects bounding boxes.
-  2. DINOv2 classifier matches each cropped detection to a reference product
-     category via cosine-similarity lookup.
+  2. DINOv2 + linear head classifies each cropped detection.
 
 Usage:
     python run.py --input /data/images --output /output/predictions.json
@@ -33,16 +32,12 @@ from dino_classifier import DINOClassifier
 MODEL_DIR = ROOT / "model"
 YOLO_WEIGHTS = MODEL_DIR / "best.pt"
 DINO_WEIGHTS = MODEL_DIR / "vit_base_patch14_dinov2_fp16.pth"
-REF_EMBEDDINGS = MODEL_DIR / "ref_embeddings.npy"
+CLS_HEAD = MODEL_DIR / "cls_head.npy"
 
 # Detection hyperparameters
 CONF_THRESHOLD = 0.25
 IOU_THRESHOLD = 0.45
 MAX_DET = 1000
-
-# Classification hyperparameters
-DINO_CONF_THRESHOLD = 0.3   # below this → fallback to category 0
-FALLBACK_CATEGORY = 0
 DINO_BATCH_SIZE = 64
 
 
@@ -71,7 +66,7 @@ def main():
     print("Loading DINOv2 classifier...")
     classifier = DINOClassifier(
         model_path=DINO_WEIGHTS,
-        embeddings_path=REF_EMBEDDINGS,
+        head_path=CLS_HEAD,
         device=device,
     )
 
@@ -108,12 +103,7 @@ def main():
         ]
 
         # Classify all crops in one batched pass
-        classifications = classifier.classify_with_fallback(
-            crops,
-            confidence_threshold=DINO_CONF_THRESHOLD,
-            fallback_category_id=FALLBACK_CATEGORY,
-            batch_size=DINO_BATCH_SIZE,
-        )
+        classifications = classifier.classify(crops, batch_size=DINO_BATCH_SIZE)
 
         for (x1, y1, x2, y2), conf, cls in zip(boxes_xyxy, confs, classifications):
             predictions.append({

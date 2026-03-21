@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # package.sh — Build submission zip from trained model artifacts.
 #
-# Run on the HPC after training and build_embeddings.py have completed.
+# Run on the HPC after train_yolo and train_dino have completed.
 #
 # Usage:
 #   ./package.sh                          # auto-detect latest run in runs/

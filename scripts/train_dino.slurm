@@ -9,7 +9,7 @@
 #SBATCH --time=12:00:00
 set -euo pipefail
 
-# Fine-tunes DINOv2 on shelf product crops using ArcFace loss.
+# Fine-tunes DINOv2 on shelf product crops with supervised classification head.
 # Exports backbone FP16 + classifier head weights.
 #
 # Usage:

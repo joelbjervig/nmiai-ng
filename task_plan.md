@@ -21,8 +21,9 @@ Phase 1
 - [x] Export backbone (FP16) and classifier head weights (cls_head.npy) separately
 - [x] Update slurm script defaults (img_size=518, batch=32, no ArcFace args)
 - [x] Update package.sh for cls_head.npy instead of ref_embeddings
-- [ ] Update `dino_classifier.py` to use linear head instead of kNN/nearest-neighbor
-- [ ] Update `run.py` to load and use the new classifier
+- [x] Rewrite `dino_classifier.py`: linear head forward pass (removed kNN, ref_embeddings, fallback)
+- [x] Rewrite `run.py`: loads cls_head.npy, no more ref_embeddings or confidence fallback
+- [x] Full dead-code sweep: removed all ArcFace, kNN, ref_embeddings references across codebase
 - [ ] Try label smoothing in CrossEntropyLoss for regularization (e.g. label_smoothing=0.1)
 - **Status:** in_progress
 
@@ -40,14 +41,14 @@ Phase 1
 - **Status:** pending
 
 ### Phase 5: Package & Submit
-- [ ] Update `package.sh` for new submission structure (backbone + cls_head, no ref_embeddings)
+- [x] Update `package.sh` for new submission structure (backbone + cls_head.npy)
 - [ ] Verify submission.zip ≤ 420 MB
 - [ ] Verify run.py works with sandbox constraints (blocked imports, 300s timeout)
 - [ ] Submit and evaluate on competition leaderboard
 - **Status:** pending
 
 ## Key Questions
-1. ArcFace vs cross-entropy for supervised head? (ArcFace optimizes cosine margin directly, CE is simpler — test both if time permits)
+1. ~~ArcFace vs cross-entropy?~~ Resolved: using CrossEntropyLoss (simpler, closed-set)
 2. How many DINOv2 blocks to unfreeze? (Currently 4, may need to tune)
 3. Does TTA on crops fit within 300s timeout with ~90+ detections per image?
 
