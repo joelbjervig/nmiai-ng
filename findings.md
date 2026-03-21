@@ -304,23 +304,37 @@ outputs = session.run(None, {input_name: arr})
 - L4 GPU with 24GB VRAM allows large models (YOLOv8l/x)
 - 420 MB weight limit accommodates most single models
 - kNN classification with DINOv2 embeddings only achieves 0.2 cls mAP — too noisy for 356 similar classes
-- Supervised Linear(768, 356) head on DINOv2 is the standard transfer learning approach and should dramatically improve classification
+- Supervised Linear(768, 356) head dramatically improves classification: 0.2 → 0.77 local cls mAP
 - CrossEntropyLoss preferred over ArcFace for closed-set classification (simpler, fewer hyperparams)
 - Training DINOv2 at 518px (native patch-14 resolution) avoids mismatch with inference resolution
-- A30 24GB GPU on HPC fits DINOv2 518px training with batch=32 + grad checkpointing
+- A30 24GB GPU on HPC fits DINOv2 518px training with batch=256 (11GB) or batch=256+LoRA (19.8GB)
+- **Class imbalance is severe**: 74 classes <5 samples, 110 <10, 158 <20. Median=28, max=422
+- **Local→competition gap is ~0.15**: 0.79→0.63, 0.82→0.67. Points to distribution shift in test set
+- LoRA (r=16) produces tighter train/val gap (0.07) than block unfreezing (0.12), better regularization
+- LoRA val accuracy peaks at 0.92 vs 0.82 for classic fine-tuning (4 blocks)
+- YOLO26 is smaller (~51MB vs 83MB), has ProgLoss+STAL for better small object detection
+- ONNX inference with onnxruntime-gpu sidesteps ultralytics version lock in sandbox (8.1.0)
 
 ## Technical Decisions
 | Decision | Rationale |
 |----------|-----------|
 | Two-stage YOLO (detect) + DINOv2 (classify) | YOLO strong at detection (0.9 mAP), weak at fine-grained 356-class classification |
-| Supervised linear head over kNN | kNN gives 0.2 cls mAP; linear head learns decision boundaries between confusable classes |
-| CrossEntropyLoss over ArcFace | Closed-set, simpler, directly optimises classification |
-| Fine-tune DINOv2 at 518px | Match inference resolution, avoid representation mismatch |
-| Batch size 32 for DINOv2 training | Safe for 24GB A30 at 518px with grad checkpointing |
+| Supervised linear head over kNN | kNN gives 0.2 cls mAP; linear head gives 0.77 locally |
+| CrossEntropyLoss + label smoothing 0.1 | Closed-set, regularized for imbalanced classes |
+| LoRA (r=16) over block unfreezing | Better generalization: 0.92 val acc vs 0.82, tighter gap |
+| ONNX inference (no ultralytics in submission) | Sandbox has ultralytics 8.1.0; YOLO26 needs >=8.4 |
+| YOLO26l over YOLOv8l | Smaller, better small object detection, NMS-free option |
+| Robust augmentation for YOLO | Stronger color/geometric aug to combat distribution shift |
+| TTA: multi-scale detection + flip classification | Improves robustness without retraining |
 
 ## Issues Encountered
 | Issue | Resolution |
 |-------|------------|
+| SLURM dependency format invalid | Fixed afterok:id1:afterok:id2 → afterok:id1:id2 |
+| ensemble_boxes not on HPC | Added to pyproject.toml |
+| 0.15 local→competition gap | Added LoRA, label smoothing, dropout, robust augmentation |
+| ultralytics 8.1.0 can't load YOLO26 | Pin ultralytics==8.4.0 in pyproject.toml |
+| uv sync reverts ultralytics version | Pin to 8.4.0 in pyproject.toml instead of --no-deps |
 
 ## Resources
 - Overview: https://app.ainm.no/docs/norgesgruppen-data/overview

@@ -1,78 +1,83 @@
 # Task Plan: NorgesGruppen Object Detection (NM i AI 2026)
 
 ## Goal
-Maximize competition score (Score = 0.7 × detection_mAP + 0.3 × classification_mAP) by fixing classification (currently 0.2) with supervised DINOv2 classifier head, then improving detection with TTA + ensemble.
+Maximize competition score (Score = 0.7 × detection_mAP + 0.3 × classification_mAP) on unseen test set. Focus on closing the local→competition generalization gap.
 
 ## Current Phase
-Phase 2 (code complete — ready to train on HPC)
+Phase 6 (YOLO26 upgrade — training in progress)
 
 ## Phases
 
 ### Phase 1: Requirements & Discovery
-- [x] Understand competition rules, scoring, submission format
-- [x] Document findings from all 4 competition docs
-- [x] Review current codebase and training runs
-- [x] Assess current approaches and identify bottlenecks
+- [x] All tasks complete
 - **Status:** complete
 
 ### Phase 2: Supervised DINOv2 Classifier Head
-- [x] Modify `train_dino.py`: Linear(768, 356) head + CrossEntropyLoss (replaced ArcFace)
-- [x] Fine-tune at image size 518 (match inference resolution)
-- [x] Export backbone (FP16) and classifier head weights (cls_head.npy) separately
-- [x] Update slurm script defaults (img_size=518, batch=32, no ArcFace args)
-- [x] Update package.sh for cls_head.npy instead of ref_embeddings
-- [x] Rewrite `dino_classifier.py`: linear head forward pass (removed kNN, ref_embeddings, fallback)
-- [x] Rewrite `run.py`: loads cls_head.npy, no more ref_embeddings or confidence fallback
-- [x] Full dead-code sweep: removed all ArcFace, kNN, ref_embeddings references across codebase
-- [ ] Try label smoothing in CrossEntropyLoss for regularization (e.g. label_smoothing=0.1)
-- **Status:** in_progress
+- [x] Linear(768, 356) + CrossEntropyLoss (replaced ArcFace + kNN)
+- [x] Fine-tune at 518px, export backbone FP16 + cls_head.npy
+- [x] Label smoothing (0.1) + dropout (0.1) for regularization
+- [x] LoRA adapters (r=16, alpha=32) — better generalization than block unfreezing
+- **Status:** complete
+- **Results:** local val acc 0.92 (LoRA), local cls mAP 0.77, competition cls mAP ~0.25
 
-### Phase 3: Crop Test-Time Augmentation (TTA)
-- [x] Add `classify_tta()` to `dino_classifier.py` (horizontal flip, average logits)
-- [x] Refactor to `_get_logits()` + `_logits_to_results()` for clean TTA composition
-- [ ] Benchmark TTA impact on classification mAP locally with `eval_val.py`
-- **Status:** complete (code)
+### Phase 3: Crop TTA
+- [x] classify_tta() with horizontal flip logit averaging
+- **Status:** complete
 
-### Phase 4: Detection TTA + Weighted Boxes Fusion (WBF)
-- [x] Add multi-scale YOLO inference (1280 + 1024) with horizontal flip
-- [x] Integrate `ensemble-boxes` WBF to merge predictions across scales/flips
-- [x] Add `--no-tta` flag for fast single-pass fallback
-- [ ] Tune WBF parameters (iou_thr, skip_box_thr) based on competition scores
-- [ ] Benchmark detection mAP improvement locally
-- **Status:** complete (code)
+### Phase 4: Detection TTA + WBF
+- [x] Multi-scale YOLO (1280 + 1024) + flip + ensemble-boxes WBF
+- [x] --no-tta flag for fast fallback
+- **Status:** complete
 
 ### Phase 5: Package & Submit
-- [x] Update `package.sh` for new submission structure (backbone + cls_head.npy)
-- [ ] Verify submission.zip ≤ 420 MB
-- [ ] Verify run.py works with sandbox constraints (blocked imports, 300s timeout)
-- [ ] Submit and evaluate on competition leaderboard
-- **Status:** pending
+- [x] ONNX-based submission pipeline (no ultralytics at inference)
+- [x] export_checkpoint.py with LoRA merge support
+- [x] Submitted: 0.79 local → 0.63 competition, 0.82 local → 0.67 competition
+- **Status:** complete (iterating)
+
+### Phase 6: YOLO26 Upgrade
+- [x] Rewrite run.py to use onnxruntime (no ultralytics dependency)
+- [x] train_yolo.py: YOLO26 support + auto ONNX export + "robust" augmentation
+- [x] package.sh: best.onnx instead of best.pt
+- [ ] Install ultralytics>=8.4.0 on HPC for YOLO26
+- [ ] Train YOLO26l with robust augmentation + freeze=16
+- [ ] Evaluate YOLO26 vs YOLOv8 on competition
+- **Status:** in_progress
 
 ## Key Questions
-1. ~~ArcFace vs cross-entropy?~~ Resolved: using CrossEntropyLoss (simpler, closed-set)
-2. How many DINOv2 blocks to unfreeze? (Currently 4, may need to tune)
-3. Does TTA on crops fit within 300s timeout with ~90+ detections per image?
+1. ~~ArcFace vs CE?~~ Resolved: CE
+2. ~~How many blocks to unfreeze?~~ Resolved: LoRA (0 blocks, adapters instead)
+3. Why is local→competition gap so large (0.15)? Distribution shift in test set.
+4. Does YOLO26 improve detection on the competition test set?
 
 ## Decisions Made
 | Decision | Rationale |
 |----------|-----------|
-| Two-stage YOLO + DINOv2 over end-to-end multi-class YOLO | YOLO detection is strong (0.9 mAP); classification needs specialized model. 356 classes with ~64 samples/class too thin for YOLO's conv head |
-| Supervised linear head over nearest-neighbor lookup | kNN gives 0.2 cls mAP — linear head learns decision boundaries between confusable classes, much more discriminative |
-| Fine-tune DINOv2 at 518px | Must match inference resolution. Previous 336px fine-tuning → 518px inference creates representation mismatch |
-| Drop reference embeddings pipeline | Supervised head replaces kNN entirely. Smaller submission, simpler pipeline |
-| CrossEntropyLoss over ArcFace | Closed-set classification (356 fixed classes), simpler, fewer hyperparams, directly optimises the classification objective |
-| Repo restructure: src/ → train/, slurm_scripts/ → scripts/ | Fast competition dev: one place for training code, one for scripts. Removed dead approaches (yolo_cls, embeddings, multiclass slurm) |
-| run_pipeline.sh orchestrator | Single command submits full SLURM chain with dependencies; YOLO + DINOv2 train in parallel |
+| Two-stage YOLO + DINOv2 | YOLO for detection, DINOv2 for fine-grained classification |
+| Supervised linear head over kNN | kNN gives 0.2 cls mAP, linear head gives 0.77 locally |
+| CrossEntropyLoss + label smoothing 0.1 | Closed-set, regularized |
+| LoRA (r=16) over block unfreezing | Better generalization: 0.92 val acc vs 0.82, tighter train/val gap |
+| ONNX inference (no ultralytics in submission) | Sandbox has ultralytics 8.1.0 which doesn't support YOLO26 |
+| YOLO26l over YOLOv8l | Smaller model (~51 MB vs 83 MB), better small object detection (ProgLoss + STAL) |
+| Robust augmentation for YOLO | Stronger color/geometric aug to combat distribution shift |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |
 |-------|---------|------------|
+| SLURM dependency format | afterok:id1:afterok:id2 invalid | Fixed to afterok:id1:id2 |
+| ensemble_boxes not installed on HPC | ModuleNotFoundError | Added to pyproject.toml |
+| Local→competition gap 0.15 | Classic fine-tuning overfits | Added LoRA, label smoothing, dropout |
+| ultralytics 8.1.0 can't load YOLO26 | FileNotFoundError: yolo26l.pt | Need ultralytics>=8.4.0 on HPC |
+
+## Competition Score History
+| Submission | Local Score | Competition Score | Notes |
+|------------|-------------|-------------------|-------|
+| Baseline (kNN) | 0.69 | 0.69 | det=0.9, cls=0.2 |
+| Supervised head (CE, 4 blocks) | 0.79 | 0.63 | Big generalization gap |
+| LoRA + label smoothing | 0.82 | 0.67 | Gap slightly smaller |
 
 ## Notes
-- Current score: 0.7 × 0.9 + 0.3 × 0.2 = 0.69
-- Target: 0.85-0.90 (0.95 det × 0.75 cls)
-- Priority order: Phase 2 (biggest impact) → Phase 3 → Phase 4
-- YOLO+DINOv2 ensemble voting with multi-class YOLO deferred — revisit only if time permits
-- Update phase status as you progress: pending → in_progress → complete
-- Re-read this plan before major decisions
-- Log ALL errors - they help avoid repetition
+- Competition ends March 22, 2026 15:00 CET
+- Daily submission quota: 3 (resets midnight UTC)
+- Class imbalance: 74 classes with <5 samples, median=28, max=422
+- 420 MB weight limit: YOLO26l ONNX ~51 MB + DINOv2 FP16 ~170 MB + cls_head ~1 MB = ~222 MB (comfortable)

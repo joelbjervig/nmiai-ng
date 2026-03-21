@@ -6,72 +6,80 @@
 - **Status:** complete
 - **Started:** 2026-03-21
 - Actions taken:
-  - Fetched all 4 competition docs (overview, submission, scoring, examples)
-  - Captured full competition details into findings.md
-  - Reviewed all training runs (15 runs), hyperparameters, and metrics
-  - Assessed both approaches (YOLO-only vs YOLO+DINOv2)
-  - Identified classification (0.2 mAP) as the bottleneck — kNN too weak for 356 classes
-- Files created/modified:
-  - task_plan.md (created)
-  - findings.md (created + populated)
-  - progress.md (created)
+  - Fetched all 4 competition docs, reviewed 15 training runs
+  - Identified classification (0.2 mAP) as bottleneck — kNN too weak for 356 classes
 
 ### Phase 2: Supervised DINOv2 Classifier Head
-- **Status:** complete (code — awaiting HPC training)
+- **Status:** complete
 - **Started:** 2026-03-21
 - Actions taken:
   - Restructured repo: src/ → train/, slurm_scripts/ → scripts/
-  - Removed dead approaches: run_yolo_cls.py, build_embeddings, build_irl_embeddings, multiclass slurm
-  - Rewrote train/train_dino.py: replaced ArcFace with Linear(768, 356) + CrossEntropyLoss
-  - Changed img_size default from 336 → 518 (match inference resolution)
-  - Rewrote dino_classifier.py: linear head forward pass replaces kNN/ref_embeddings
-  - Rewrote run.py: loads cls_head.npy, removed fallback/confidence threshold
-  - Updated package.sh: packages cls_head.npy instead of ref_embeddings.npy
-  - Created scripts/run_pipeline.sh: full SLURM orchestrator with dependency chains
-  - Aligned all defaults across slurm scripts and Python scripts
-  - Full dead-code sweep across entire codebase
-  - Removed plot_umap.py (unused)
-- Files created/modified:
-  - train/train_dino.py (rewritten)
-  - dino_classifier.py (rewritten)
-  - run.py (rewritten)
-  - scripts/run_pipeline.sh (new)
-  - scripts/package.sh (updated)
-  - scripts/package.slurm (updated)
-  - scripts/train_dino.slurm (updated)
-  - scripts/train_yolo.slurm (updated)
-  - scripts/prepare_data.slurm (updated)
-  - train/train_yolo.py (defaults fixed)
-  - .gitignore (updated)
-- Files removed:
-  - run_yolo_cls.py, package_yolo_cls.sh
-  - src/build_embeddings.py, src/build_irl_embeddings.py
-  - train/plot_umap.py, scripts/plot_umap.slurm
-  - 5 obsolete slurm scripts
-  - submission/ dir, stale zips
+  - Replaced ArcFace+kNN with Linear(768, 356) + CrossEntropyLoss
+  - Added label smoothing (0.1), dropout (0.1), LoRA adapters (r=16)
+  - Changed img_size 336 → 518, added export_checkpoint.py with LoRA merge
+  - Created run_pipeline.sh orchestrator
+- Training results (LoRA, 20 epochs):
+  - Best val accuracy: 0.92 (epoch ~16)
+  - Train/val gap: 0.07 (much tighter than classic fine-tuning's 0.12)
 
-### Next: Run pipeline on HPC
-- `git pull && ./scripts/run_pipeline.sh --skip-prepare`
-- Monitor: `squeue -u $USER` and `tail -f output/nmiai-*.out`
-- After training: check eval scores, then proceed to Phase 3 (crop TTA)
+### Phase 3 & 4: TTA + WBF
+- **Status:** complete (code)
+- Actions taken:
+  - Added classify_tta() with horizontal flip logit averaging
+  - Added multi-scale YOLO (1280+1024) + flip + WBF in run.py
+  - Added --no-tta flag
+
+### Phase 5: Submissions
+- **Status:** iterating
+- Submission 1 (supervised head, 4 blocks unfrozen): local 0.79 → competition 0.63
+- Submission 2 (LoRA + label smoothing): local 0.82 → competition 0.67
+- Key insight: ~0.15 local→competition gap persists — distribution shift problem
+
+## Session: 2026-03-22
+
+### Phase 6: YOLO26 Upgrade
+- **Status:** in_progress
+- **Started:** 2026-03-22
+- Actions taken:
+  - Rewrote run.py to use onnxruntime (no ultralytics dependency at inference)
+  - Added letterbox preprocessing, NMS, YOLODetector class for ONNX
+  - Updated train_yolo.py: yolo26l.pt default, auto ONNX export, "robust" augmentation
+  - Updated package.sh: best.onnx instead of best.pt
+  - Updated pyproject.toml: ultralytics 8.1.0 → 8.4.0 for YOLO26
+- Blocking: need ultralytics>=8.4 on HPC to download/train YOLO26
+- Files modified:
+  - run.py (rewritten — ONNX inference)
+  - train/train_yolo.py (YOLO26, robust aug, ONNX export)
+  - scripts/package.sh (best.onnx)
+  - scripts/predict_val.slurm (best.onnx)
+  - scripts/train_yolo.slurm (yolo26l defaults)
+  - pyproject.toml (ultralytics==8.4.0)
 
 ## Test Results
-| Test | Input | Expected | Actual | Status |
-|------|-------|----------|--------|--------|
-| Baseline (pre-refactor) | val set | det=0.9, cls=0.2 | det=0.9, cls=0.2 | baseline |
+
+| Test | det mAP | cls mAP | Local Score | Competition Score |
+|------|---------|---------|-------------|-------------------|
+| Baseline kNN | 0.90 | 0.20 | 0.69 | 0.69 |
+| CE + 4 blocks | 0.84 | 0.68 | 0.79 | 0.63 |
+| LoRA + smoothing | 0.84 | 0.77 | 0.82 | 0.67 |
 
 ## Error Log
-| Timestamp | Error | Attempt | Resolution |
-|-----------|-------|---------|------------|
+
+| Timestamp | Error | Resolution |
+|-----------|-------|------------|
+| 2026-03-21 | SLURM afterok:id1:afterok:id2 | Fixed to afterok:id1:id2 |
+| 2026-03-21 | ensemble_boxes ModuleNotFoundError | Added to pyproject.toml |
+| 2026-03-22 | yolo26l.pt FileNotFoundError | ultralytics too old, need >=8.4 |
 
 ## 5-Question Reboot Check
+
 | Question | Answer |
 |----------|--------|
-| Where am I? | Phase 2 complete (code), awaiting HPC training |
-| Where am I going? | Train on HPC → Phase 3 (crop TTA) → Phase 4 (detection TTA) |
-| What's the goal? | Maximize Score = 0.7 × det_mAP + 0.3 × cls_mAP (target: 0.85-0.90) |
-| What have I learned? | See findings.md — kNN fails at 356 classes, supervised head is the fix |
-| What have I done? | Full codebase rewrite: supervised head, repo restructure, pipeline orchestrator |
+| Where am I? | Phase 6: YOLO26 upgrade, blocked on ultralytics version on HPC |
+| Where am I going? | Train YOLO26 → evaluate → submit |
+| What's the goal? | Close the 0.15 local→competition gap, maximize competition score |
+| What have I learned? | LoRA helps (0.07 gap vs 0.12), but distribution shift is the main issue |
+| What have I done? | Full ONNX inference pipeline, LoRA DINOv2, TTA+WBF, YOLO26 support |
 
 ---
 *Update after completing each phase or encountering errors*
