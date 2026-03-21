@@ -36,14 +36,14 @@ fi
 echo "Plotting UMAP: neighbors=${NEIGHBORS}, min_dist=${MIN_DIST}, output=${OUTPUT}"
 
 if command -v uv >/dev/null 2>&1; then
-    uv run python src/plot_umap.py \
+    uv run python train/plot_umap.py \
         --neighbors "${NEIGHBORS}" \
         --min-dist  "${MIN_DIST}" \
         --output    "${OUTPUT}" \
         --dpi       "${DPI}" \
         --point-size "${POINT_SIZE}"
 else
-    python src/plot_umap.py \
+    python train/plot_umap.py \
         --neighbors "${NEIGHBORS}" \
         --min-dist  "${MIN_DIST}" \
         --output    "${OUTPUT}" \

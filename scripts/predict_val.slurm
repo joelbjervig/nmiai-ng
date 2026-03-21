@@ -10,8 +10,8 @@
 set -euo pipefail
 
 # Optional overrides at submit time:
-#   sbatch slurm_scripts/predict_val.slurm
-#   sbatch --export=ALL,INPUT=data/train/images,OUTPUT=output/train_predictions.json slurm_scripts/predict_val.slurm
+#   sbatch scripts/predict_val.slurm
+#   sbatch --export=ALL,INPUT=data/train/images,OUTPUT=output/train_predictions.json scripts/predict_val.slurm
 
 INPUT=${INPUT:-data/yolo_single/val/images}
 OUTPUT=${OUTPUT:-output/val_predictions.json}

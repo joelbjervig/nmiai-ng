@@ -9,11 +9,11 @@
 set -euo pipefail
 
 # Optional overrides at submit time:
-#   sbatch slurm_scripts/eval_val.slurm
-#   sbatch --export=ALL,PREDS=output/val_predictions.json slurm_scripts/eval_val.slurm
+#   sbatch scripts/eval_val.slurm
+#   sbatch --export=ALL,PREDS=output/val_predictions.json scripts/eval_val.slurm
 #
 # To run after predict_val automatically:
-#   sbatch --dependency=afterok:<predict_job_id> slurm_scripts/eval_val.slurm
+#   sbatch --dependency=afterok:<predict_job_id> scripts/eval_val.slurm
 
 PREDS=${PREDS:-output/val_predictions.json}
 

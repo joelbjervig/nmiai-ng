@@ -27,7 +27,7 @@ if [[ "${SINGLE_CLASS}" == "1" ]]; then
 fi
 
 if command -v uv >/dev/null 2>&1; then
-    uv run python src/prepare_data.py "${ARGS[@]}"
+    uv run python train/prepare_data.py "${ARGS[@]}"
 else
-    python src/prepare_data.py "${ARGS[@]}"
+    python train/prepare_data.py "${ARGS[@]}"
 fi

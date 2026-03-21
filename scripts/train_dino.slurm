@@ -10,15 +10,11 @@
 set -euo pipefail
 
 # Fine-tunes DINOv2 on shelf product crops using ArcFace loss.
-# Overwrites model/<MODEL>_fp16.pth with the fine-tuned FP16 backbone.
-# After this, re-run build_irl_embeddings.slurm to rebuild reference embeddings.
+# Exports backbone FP16 + classifier head weights.
 #
 # Usage:
-#   sbatch slurm_scripts/finetune_dino.slurm
-#   sbatch --export=ALL,UNFREEZE_BLOCKS=6,EPOCHS=80 slurm_scripts/finetune_dino.slurm
-#
-# Chain with build_irl_embeddings afterwards:
-#   sbatch --dependency=afterok:<job_id> slurm_scripts/build_irl_embeddings.slurm
+#   sbatch scripts/train_dino.slurm
+#   sbatch --export=ALL,UNFREEZE_BLOCKS=6,EPOCHS=80 scripts/train_dino.slurm
 
 MODEL=${MODEL:-vit_base_patch14_dinov2}
 UNFREEZE_BLOCKS=${UNFREEZE_BLOCKS:-4}
@@ -52,7 +48,7 @@ GRAD_CHECKPOINT_FLAG=""
 [[ "${GRAD_CHECKPOINT}" == "1" ]] && GRAD_CHECKPOINT_FLAG="--grad-checkpoint"
 
 if command -v uv >/dev/null 2>&1; then
-    uv run python src/finetune_dino.py \
+    uv run python train/train_dino.py \
         --model "${MODEL}" \
         --unfreeze-blocks "${UNFREEZE_BLOCKS}" \
         --epochs "${EPOCHS}" \
@@ -68,7 +64,7 @@ if command -v uv >/dev/null 2>&1; then
         --workers "${WORKERS}" \
         ${GRAD_CHECKPOINT_FLAG}
 else
-    python src/finetune_dino.py \
+    python train/train_dino.py \
         --model "${MODEL}" \
         --unfreeze-blocks "${UNFREEZE_BLOCKS}" \
         --epochs "${EPOCHS}" \
