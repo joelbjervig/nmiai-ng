@@ -18,10 +18,8 @@ and dino_classifier.py without any changes.
 
 Speed notes
 -----------
-- Default img_size=224 (16×16=256 tokens) vs native 518 (37×37=1369 tokens).
-  ~5× fewer tokens, attention is O(n²), so ~25× less attention compute.
-  224 and 336 are both divisible by patch size 14; position embeddings are
-  interpolated automatically. Inference can still run at 518.
+- Default img_size=518 (37×37=1369 tokens) matches inference resolution.
+  518 is the native resolution for patch size 14.
 - Crops are pre-extracted to disk (--crop-cache-dir) once, so each epoch
   loads small JPEGs instead of full 4MP+ shelf images.
 - --grad-checkpoint trades redundant recomputation for GPU memory, allowing
@@ -29,10 +27,10 @@ Speed notes
 
 Usage
 -----
-    python src/finetune_dino.py
-    python src/finetune_dino.py --img-size 336 --batch-size 128
-    python src/finetune_dino.py --unfreeze-blocks 6 --epochs 80
-    python src/finetune_dino.py --grad-checkpoint --batch-size 128
+    python train/train_dino.py
+    python train/train_dino.py --img-size 518 --batch-size 32
+    python train/train_dino.py --unfreeze-blocks 6 --epochs 80
+    python train/train_dino.py --grad-checkpoint --batch-size 64
 """
 import argparse
 import json
@@ -396,7 +394,7 @@ def main():
     parser.add_argument("--unfreeze-blocks",  type=int,   default=4)
     parser.add_argument("--epochs",           type=int,   default=60)
     parser.add_argument("--batch-size",       type=int,   default=64)
-    parser.add_argument("--img-size",         type=int,   default=336,
+    parser.add_argument("--img-size",         type=int,   default=518,
                         help="Training crop size. 224/336/518 all divisible by patch size 14."
                              " Inference always runs at 518; position embeddings interpolate.")
     parser.add_argument("--lr-backbone",      type=float, default=2e-5)
