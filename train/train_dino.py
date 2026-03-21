@@ -229,7 +229,8 @@ def load_backbone(model_name: str, weights_path: Path) -> nn.Module:
 
 # ── Training / evaluation ────────────────────────────────────────────────────
 
-def train_one_epoch(backbone, head, loader, optimizer, scaler, scheduler, device, epoch):
+def train_one_epoch(backbone, head, loader, optimizer, scaler, scheduler, device, epoch,
+                    label_smoothing=0.0, dropout=0.0):
     backbone.train()
     head.train()
     total_loss = 0.0
@@ -243,8 +244,10 @@ def train_one_epoch(backbone, head, loader, optimizer, scaler, scheduler, device
 
         with torch.amp.autocast(device_type="cuda"):
             features = backbone(imgs)
+            if dropout > 0.0:
+                features = F.dropout(features, p=dropout, training=True)
             logits   = head(features)
-            loss     = F.cross_entropy(logits, labels)
+            loss     = F.cross_entropy(logits, labels, label_smoothing=label_smoothing)
 
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
@@ -353,7 +356,7 @@ def make_weighted_sampler(dataset: ProductCropDataset) -> WeightedRandomSampler:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model",            default="vit_base_patch14_dinov2")
-    parser.add_argument("--unfreeze-blocks",  type=int,   default=4)
+    parser.add_argument("--unfreeze-blocks",  type=int,   default=2)
     parser.add_argument("--epochs",           type=int,   default=60)
     parser.add_argument("--batch-size",       type=int,   default=64)
     parser.add_argument("--img-size",         type=int,   default=518,
@@ -362,6 +365,10 @@ def main():
     parser.add_argument("--lr-head",          type=float, default=1e-3)
     parser.add_argument("--weight-decay",     type=float, default=1e-4)
     parser.add_argument("--warmup-epochs",    type=int,   default=5)
+    parser.add_argument("--label-smoothing",  type=float, default=0.1,
+                        help="Label smoothing for CrossEntropyLoss (0.0 = off)")
+    parser.add_argument("--dropout",          type=float, default=0.1,
+                        help="Dropout on features before classification head (0.0 = off)")
     parser.add_argument("--min-crop-size",    type=int,   default=20)
     parser.add_argument("--workers",          type=int,   default=4)
     parser.add_argument("--grad-checkpoint",  action="store_true",
@@ -457,7 +464,8 @@ def main():
     best_ckpt    = OUTPUT_DIR / f"{args.model}_finetune_best.pth"
 
     print(f"\nModel   : {args.model}  ({num_classes} classes, embed_dim={embed_dim})")
-    print(f"Head    : Linear({embed_dim}, {num_classes}) + CrossEntropyLoss")
+    print(f"Head    : Linear({embed_dim}, {num_classes}) + CrossEntropyLoss(label_smoothing={args.label_smoothing})")
+    print(f"Dropout : {args.dropout}  |  unfreeze_blocks: {args.unfreeze_blocks}")
     print(f"img_size: {args.img_size}  |  batch: {args.batch_size}  |  epochs: {args.epochs}")
     print(f"crop_cache: {'disabled' if args.no_crop_cache else args.crop_cache_dir}")
     print("=" * 60)
@@ -465,7 +473,8 @@ def main():
     for epoch in range(1, args.epochs + 1):
         t0 = time.time()
         train_loss, train_acc = train_one_epoch(
-            backbone, head, train_loader, optimizer, scaler, scheduler, args.device, epoch
+            backbone, head, train_loader, optimizer, scaler, scheduler, args.device, epoch,
+            label_smoothing=args.label_smoothing, dropout=args.dropout,
         )
         val_loss, val_acc = evaluate(backbone, head, val_loader, args.device)
 
