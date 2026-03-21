@@ -3,6 +3,9 @@
 Loads the fine-tuned DINOv2 backbone (FP16) and a trained linear classification
 head, then classifies cropped product images via a forward pass.
 
+Supports test-time augmentation (TTA) by averaging logits across original
+and horizontally flipped crops for more robust classification.
+
 Crops are padded to square before resizing to preserve aspect ratio.
 
 Designed to work within the competition sandbox (no os module, uses pathlib).
@@ -81,6 +84,28 @@ class DINOClassifier:
         print(f"DINOClassifier ready: {model_name}, {num_classes} classes, device={device}")
 
     @torch.no_grad()
+    def _get_logits(self, crops: list[Image.Image], batch_size: int = 64) -> torch.Tensor:
+        """Get raw logits for a list of crops."""
+        all_logits = []
+        for i in range(0, len(crops), batch_size):
+            batch_crops = crops[i:i + batch_size]
+            tensors = [self.transform(c.convert("RGB")) for c in batch_crops]
+            batch = torch.stack(tensors).to(self.device).half()
+            features = self.model(batch)
+            logits = self.head(features)
+            all_logits.append(logits)
+        return torch.cat(all_logits, dim=0)
+
+    def _logits_to_results(self, logits: torch.Tensor) -> list[dict]:
+        """Convert logits tensor to list of {category_id, score} dicts."""
+        probs = logits.softmax(dim=-1)
+        scores, labels = probs.max(dim=-1)
+        return [
+            {"category_id": self.label_to_catid[label.item()], "score": float(score)}
+            for score, label in zip(scores.cpu(), labels.cpu())
+        ]
+
+    @torch.no_grad()
     def classify(self, crops: list[Image.Image], batch_size: int = 64) -> list[dict]:
         """Classify cropped product images.
 
@@ -90,20 +115,26 @@ class DINOClassifier:
         """
         if not crops:
             return []
+        logits = self._get_logits(crops, batch_size)
+        return self._logits_to_results(logits)
 
-        all_results = []
-        for i in range(0, len(crops), batch_size):
-            batch_crops = crops[i:i + batch_size]
-            tensors = [self.transform(c.convert("RGB")) for c in batch_crops]
-            batch = torch.stack(tensors).to(self.device).half()
+    @torch.no_grad()
+    def classify_tta(self, crops: list[Image.Image], batch_size: int = 64) -> list[dict]:
+        """Classify with test-time augmentation (horizontal flip).
 
-            features = self.model(batch)
-            logits = self.head(features)
-            probs = logits.softmax(dim=-1)
+        Averages logits from original + flipped crops before softmax.
+        More robust than single-pass classification.
+        """
+        if not crops:
+            return []
 
-            scores, labels = probs.max(dim=-1)
-            for score, label in zip(scores.cpu(), labels.cpu()):
-                cat_id = self.label_to_catid[label.item()]
-                all_results.append({"category_id": cat_id, "score": float(score)})
+        # Original
+        logits_orig = self._get_logits(crops, batch_size)
 
-        return all_results
+        # Horizontal flip
+        flipped = [c.transpose(Image.FLIP_LEFT_RIGHT) for c in crops]
+        logits_flip = self._get_logits(flipped, batch_size)
+
+        # Average logits (more stable than averaging probabilities)
+        logits_avg = (logits_orig + logits_flip) / 2.0
+        return self._logits_to_results(logits_avg)

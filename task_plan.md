@@ -28,17 +28,18 @@ Phase 2 (code complete — ready to train on HPC)
 - **Status:** in_progress
 
 ### Phase 3: Crop Test-Time Augmentation (TTA)
-- [ ] Add TTA to `dino_classifier.py` (horizontal flip, scale jitter, color jitter)
-- [ ] For each crop: create N augmented versions, embed all, average embeddings, then classify
+- [x] Add `classify_tta()` to `dino_classifier.py` (horizontal flip, average logits)
+- [x] Refactor to `_get_logits()` + `_logits_to_results()` for clean TTA composition
 - [ ] Benchmark TTA impact on classification mAP locally with `eval_val.py`
-- **Status:** pending
+- **Status:** complete (code)
 
 ### Phase 4: Detection TTA + Weighted Boxes Fusion (WBF)
-- [ ] Add multi-scale inference to YOLO detector (e.g., 1280 + 1024, horizontal flip)
-- [ ] Use `ensemble-boxes` (pre-installed) for Weighted Boxes Fusion to merge predictions
-- [ ] Tune WBF parameters (iou_thr, skip_box_thr, weights)
+- [x] Add multi-scale YOLO inference (1280 + 1024) with horizontal flip
+- [x] Integrate `ensemble-boxes` WBF to merge predictions across scales/flips
+- [x] Add `--no-tta` flag for fast single-pass fallback
+- [ ] Tune WBF parameters (iou_thr, skip_box_thr) based on competition scores
 - [ ] Benchmark detection mAP improvement locally
-- **Status:** pending
+- **Status:** complete (code)
 
 ### Phase 5: Package & Submit
 - [x] Update `package.sh` for new submission structure (backbone + cls_head.npy)
