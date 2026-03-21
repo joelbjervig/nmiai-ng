@@ -12,8 +12,6 @@ wheels/
 # Virtual environments
 .venv
 
-output/
 model/
 data/
-runs/
 submission_staging/
