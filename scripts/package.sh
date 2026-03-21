@@ -16,6 +16,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 RUN_DIR="${1:-}"
+RUN_DIR=${RUN_DIR:-runs/yolov8l_detect11}
+
 DINO_MODEL="${DINO_MODEL:-vit_base_patch14_dinov2}"
 # DINO_WEIGHTS overrides the auto-derived path — use this for fine-tuned models:
 #   DINO_WEIGHTS=model/vit_base_patch14_dinov2_finetune_best.pth ./package.sh
