@@ -1,0 +1,7 @@
+Job: nmiai-irl-embed (2145)
+Node: ds01
+CUDA_VISIBLE_DEVICES=0
+Building IRL embeddings: model=vit_base_patch14_dinov2_finetune_best, img_size=518, batch=64, min_crop=20, max_crops_per_cat=10
+Visible GPUs from nvidia-smi:
+GPU 0: NVIDIA A30 (UUID: GPU-45e4bb18-293b-0643-0425-6af5d634cc93)
+Loading vit_base_patch14_dinov2_finetune_best...
