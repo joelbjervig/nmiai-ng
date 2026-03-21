@@ -23,11 +23,9 @@ BATCH_SIZE=${BATCH_SIZE:-32}
 IMG_SIZE=${IMG_SIZE:-518}
 GRAD_CHECKPOINT=${GRAD_CHECKPOINT:-1}
 LR_BACKBONE=${LR_BACKBONE:-2e-5}
-LR_HEAD=${LR_HEAD:-1e-4}
+LR_HEAD=${LR_HEAD:-1e-3}
 WEIGHT_DECAY=${WEIGHT_DECAY:-1e-4}
 WARMUP_EPOCHS=${WARMUP_EPOCHS:-5}
-ARCFACE_S=${ARCFACE_S:-30.0}
-ARCFACE_M=${ARCFACE_M:-0.4}
 MIN_CROP_SIZE=${MIN_CROP_SIZE:-20}
 WORKERS=${WORKERS:-4}
 
@@ -37,7 +35,7 @@ echo "Job: ${SLURM_JOB_NAME} (${SLURM_JOB_ID})"
 echo "Node: $(hostname)"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
 echo "Config: model=${MODEL}, unfreeze_blocks=${UNFREEZE_BLOCKS}, epochs=${EPOCHS}, batch=${BATCH_SIZE}, img_size=${IMG_SIZE}"
-echo "LR: backbone=${LR_BACKBONE}, head=${LR_HEAD}  ArcFace: s=${ARCFACE_S}, m=${ARCFACE_M}"
+echo "LR: backbone=${LR_BACKBONE}, head=${LR_HEAD}  Loss: CrossEntropy"
 
 if command -v nvidia-smi >/dev/null 2>&1; then
     echo "Visible GPUs:"
@@ -58,8 +56,6 @@ if command -v uv >/dev/null 2>&1; then
         --lr-head "${LR_HEAD}" \
         --weight-decay "${WEIGHT_DECAY}" \
         --warmup-epochs "${WARMUP_EPOCHS}" \
-        --arcface-s "${ARCFACE_S}" \
-        --arcface-m "${ARCFACE_M}" \
         --min-crop-size "${MIN_CROP_SIZE}" \
         --workers "${WORKERS}" \
         ${GRAD_CHECKPOINT_FLAG}
@@ -74,8 +70,6 @@ else
         --lr-head "${LR_HEAD}" \
         --weight-decay "${WEIGHT_DECAY}" \
         --warmup-epochs "${WARMUP_EPOCHS}" \
-        --arcface-s "${ARCFACE_S}" \
-        --arcface-m "${ARCFACE_M}" \
         --min-crop-size "${MIN_CROP_SIZE}" \
         --workers "${WORKERS}" \
         ${GRAD_CHECKPOINT_FLAG}

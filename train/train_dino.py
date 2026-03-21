@@ -1,24 +1,21 @@
-"""Fine-tune DINOv2 on shelf product crops using ArcFace loss.
+"""Fine-tune DINOv2 on shelf product crops with a supervised classification head.
 
 Strategy
 --------
-ArcFace loss fine-tunes the embedding space directly for cosine-similarity
-nearest-neighbour retrieval (which is what dino_classifier.py uses at
-inference). Cross-entropy would work but doesn't optimise the angular
-geometry of the embedding space — ArcFace adds an angular margin between
-classes, making the NN lookup more reliable.
+Cross-entropy loss with a Linear(768, 356) head directly optimises closed-set
+classification — the exact task we need at inference. The last --unfreeze-blocks
+transformer blocks (+ final LayerNorm) are fine-tuned while earlier blocks keep
+their pretrained features, preventing overfitting on ~22k crops (~64/class).
 
-Only the last --unfreeze-blocks transformer blocks (+ final LayerNorm) are
-trained; earlier blocks keep their pretrained features. This prevents
-overfitting on the ~22k available crops (~64/class on average).
+After training, two artifacts are exported:
+  - model/<model_name>_fp16.pth  — backbone state dict (FP16)
+  - model/cls_head.npy           — classifier head weights + bias (FP16)
 
-After training, the backbone is exported as an FP16 state dict that replaces
-model/<model_name>_fp16.pth and can be used directly by build_irl_embeddings.py
-and dino_classifier.py without any changes.
+Both are loaded by dino_classifier.py at inference time.
 
 Speed notes
 -----------
-- Default img_size=518 (37×37=1369 tokens) matches inference resolution.
+- Default img_size=518 (37x37=1369 tokens) matches inference resolution.
   518 is the native resolution for patch size 14.
 - Crops are pre-extracted to disk (--crop-cache-dir) once, so each epoch
   loads small JPEGs instead of full 4MP+ shelf images.
@@ -108,13 +105,7 @@ def extract_crops(
     min_crop_size: int = 20,
     context_frac: float = 0.05,
 ) -> None:
-    """Extract and save all annotation crops as small JPEGs (one-time cost).
-
-    Loading a 200KB crop JPEG is orders of magnitude faster than decompressing
-    a full 4MP+ shelf image and then cropping a tiny region from it.
-
-    Files are named <ann_id>.jpg under cache_dir.
-    """
+    """Extract and save all annotation crops as small JPEGs (one-time cost)."""
     cache_dir.mkdir(parents=True, exist_ok=True)
     needed = [
         a for a in annotations
@@ -126,7 +117,6 @@ def extract_crops(
         return
 
     print(f"Pre-extracting {len(needed)} crops to {cache_dir} ...")
-    # Group by image to avoid re-opening the same image repeatedly
     by_image: dict[int, list[dict]] = defaultdict(list)
     for ann in needed:
         by_image[ann["image_id"]].append(ann)
@@ -155,11 +145,7 @@ def extract_crops(
 # ── Dataset ───────────────────────────────────────────────────────────────────
 
 class ProductCropDataset(Dataset):
-    """Yields (crop_tensor, label_idx) for fine-tuning.
-
-    If crop_dir is set, loads from pre-extracted JPEGs (fast).
-    Otherwise falls back to cropping from full shelf images (slow).
-    """
+    """Yields (crop_tensor, label_idx) for fine-tuning."""
 
     def __init__(
         self,
@@ -178,7 +164,6 @@ class ProductCropDataset(Dataset):
         self.image_paths    = image_paths
         self.crop_dir       = crop_dir
 
-        # (image_id, bbox, label, ann_id)
         self.samples: list[tuple[int, list, int, int]] = []
         for ann in annotations:
             x, y, w, h = ann["bbox"]
@@ -210,37 +195,6 @@ class ProductCropDataset(Dataset):
             crop = img.crop((x1, y1, x2, y2))
 
         return self.transform(crop), label
-
-
-# ── ArcFace head ──────────────────────────────────────────────────────────────
-
-class ArcFaceHead(nn.Module):
-    """Additive angular margin softmax (ArcFace / InsightFace).
-
-    Optimises the cosine similarity margin between classes directly —
-    the same metric used by dino_classifier.py at inference time.
-    """
-
-    def __init__(self, embed_dim: int, num_classes: int, s: float = 30.0, m: float = 0.4):
-        super().__init__()
-        self.s     = s
-        self.cos_m = math.cos(m)
-        self.sin_m = math.sin(m)
-        self.th    = math.cos(math.pi - m)
-        self.mm    = math.sin(math.pi - m) * m
-
-        self.weight = nn.Parameter(torch.empty(num_classes, embed_dim))
-        nn.init.xavier_uniform_(self.weight)
-
-    def forward(self, features: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
-        cosine     = F.linear(F.normalize(features), F.normalize(self.weight))
-        sine       = torch.sqrt((1.0 - cosine.pow(2)).clamp(min=1e-6))
-        target_cos = cosine * self.cos_m - sine * self.sin_m
-        target_cos = torch.where(cosine > self.th, target_cos, cosine - self.mm)
-
-        one_hot = torch.zeros_like(cosine)
-        one_hot.scatter_(1, labels.unsqueeze(1), 1.0)
-        return (one_hot * target_cos + (1.0 - one_hot) * cosine) * self.s
 
 
 # ── Backbone helpers ──────────────────────────────────────────────────────────
@@ -289,7 +243,7 @@ def train_one_epoch(backbone, head, loader, optimizer, scaler, scheduler, device
 
         with torch.amp.autocast(device_type="cuda"):
             features = backbone(imgs)
-            logits   = head(features, labels)
+            logits   = head(features)
             loss     = F.cross_entropy(logits, labels)
 
         scaler.scale(loss).backward()
@@ -301,11 +255,8 @@ def train_one_epoch(backbone, head, loader, optimizer, scaler, scheduler, device
         scaler.update()
         scheduler.step()
 
-        # Accuracy via raw cosine (no margin) — argmax on ArcFace logits is
-        # not meaningful because the margin actively lowers the target logit
         with torch.no_grad():
-            raw_cos = F.linear(F.normalize(features), F.normalize(head.weight))
-            correct += (raw_cos.argmax(1) == labels).sum().item()
+            correct += (logits.argmax(1) == labels).sum().item()
 
         total_loss += loss.item() * len(labels)
         n          += len(labels)
@@ -332,23 +283,34 @@ def evaluate(backbone, head, loader, device):
         imgs, labels = imgs.to(device), labels.to(device)
         with torch.amp.autocast(device_type="cuda"):
             features = backbone(imgs)
-            logits   = head(features, labels)
+            logits   = head(features)
             loss     = F.cross_entropy(logits, labels)
 
-        raw_cos = F.linear(F.normalize(features), F.normalize(head.weight))
         total_loss += loss.item() * len(labels)
-        correct    += (raw_cos.argmax(1) == labels).sum().item()
+        correct    += (logits.argmax(1) == labels).sum().item()
         n          += len(labels)
 
     return total_loss / n, correct / n
 
 
 def export_fp16(backbone, model_name: str, output_dir: Path):
-    """Save backbone as FP16 state dict — drop-in for build_irl_embeddings.py."""
+    """Save backbone as FP16 state dict."""
     out_path = output_dir / f"{model_name}_fp16.pth"
     state_dict = {k: v.half() for k, v in backbone.state_dict().items()}
     torch.save(state_dict, out_path)
     print(f"Exported FP16 backbone → {out_path} ({out_path.stat().st_size / 1e6:.1f} MB)")
+
+
+def export_cls_head(head: nn.Linear, catid_to_label: dict[int, int], output_dir: Path):
+    """Save classifier head weights, bias, and label→category_id mapping."""
+    head_data = {
+        "weight": head.weight.data.cpu().half().numpy(),
+        "bias": head.bias.data.cpu().half().numpy(),
+        "label_to_catid": {v: k for k, v in catid_to_label.items()},
+    }
+    out_path = output_dir / "cls_head.npy"
+    np.save(out_path, head_data, allow_pickle=True)
+    print(f"Exported classifier head → {out_path} ({out_path.stat().st_size / 1e6:.1f} MB)")
 
 
 # ── Data loading ──────────────────────────────────────────────────────────────
@@ -395,14 +357,11 @@ def main():
     parser.add_argument("--epochs",           type=int,   default=60)
     parser.add_argument("--batch-size",       type=int,   default=64)
     parser.add_argument("--img-size",         type=int,   default=518,
-                        help="Training crop size. 224/336/518 all divisible by patch size 14."
-                             " Inference always runs at 518; position embeddings interpolate.")
+                        help="Training crop size. Must match inference resolution (518).")
     parser.add_argument("--lr-backbone",      type=float, default=2e-5)
-    parser.add_argument("--lr-head",          type=float, default=1e-4)
+    parser.add_argument("--lr-head",          type=float, default=1e-3)
     parser.add_argument("--weight-decay",     type=float, default=1e-4)
     parser.add_argument("--warmup-epochs",    type=int,   default=5)
-    parser.add_argument("--arcface-s",        type=float, default=30.0)
-    parser.add_argument("--arcface-m",        type=float, default=0.4)
     parser.add_argument("--min-crop-size",    type=int,   default=20)
     parser.add_argument("--workers",          type=int,   default=4)
     parser.add_argument("--grad-checkpoint",  action="store_true",
@@ -456,20 +415,24 @@ def main():
     # ── Model ─────────────────────────────────────────────────────────────────
     weights_path = OUTPUT_DIR / f"{args.model}_fp16.pth"
     if not weights_path.exists():
-        raise FileNotFoundError(
-            f"Backbone weights not found: {weights_path}\n"
-            f"  Run: python src/build_embeddings.py --model {args.model}"
-        )
+        print(f"Backbone weights not found at {weights_path}, downloading pretrained...")
+        backbone = timm.create_model(args.model, pretrained=True, num_classes=0,
+                                      dynamic_img_size=True)
+        state_dict = {k: v.half() for k, v in backbone.state_dict().items()}
+        torch.save(state_dict, weights_path)
+        print(f"Saved pretrained backbone → {weights_path}")
+    else:
+        backbone = load_backbone(args.model, weights_path)
 
-    backbone = load_backbone(args.model, weights_path).to(args.device)
+    backbone = backbone.to(args.device)
     freeze_backbone(backbone, args.unfreeze_blocks)
 
     if args.grad_checkpoint:
         backbone.set_grad_checkpointing(True)
         print("Gradient checkpointing: enabled")
 
-    head = ArcFaceHead(backbone.num_features, num_classes,
-                       s=args.arcface_s, m=args.arcface_m).to(args.device)
+    embed_dim = backbone.num_features
+    head = nn.Linear(embed_dim, num_classes).to(args.device)
 
     # ── Optimizer & scheduler ─────────────────────────────────────────────────
     optimizer = torch.optim.AdamW([
@@ -482,7 +445,7 @@ def main():
 
     def lr_lambda(step):
         if step < warmup_steps:
-            return (step + 1) / warmup_steps  # starts at 1/warmup_steps, not 0
+            return (step + 1) / warmup_steps
         progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
         return max(0.0, 0.5 * (1.0 + math.cos(math.pi * progress)))
 
@@ -493,9 +456,9 @@ def main():
     best_val_acc = 0.0
     best_ckpt    = OUTPUT_DIR / f"{args.model}_finetune_best.pth"
 
-    print(f"\nModel   : {args.model}  ({num_classes} classes)")
+    print(f"\nModel   : {args.model}  ({num_classes} classes, embed_dim={embed_dim})")
+    print(f"Head    : Linear({embed_dim}, {num_classes}) + CrossEntropyLoss")
     print(f"img_size: {args.img_size}  |  batch: {args.batch_size}  |  epochs: {args.epochs}")
-    print(f"ArcFace : s={args.arcface_s}, m={args.arcface_m}")
     print(f"crop_cache: {'disabled' if args.no_crop_cache else args.crop_cache_dir}")
     print("=" * 60)
 
@@ -521,13 +484,18 @@ def main():
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
-            torch.save(backbone.state_dict(), best_ckpt)
+            torch.save({
+                "backbone": backbone.state_dict(),
+                "head": head.state_dict(),
+            }, best_ckpt)
 
     # ── Export ────────────────────────────────────────────────────────────────
     print(f"\nBest val acc: {best_val_acc:.3f}")
-    backbone.load_state_dict(torch.load(best_ckpt, map_location="cpu", weights_only=True))
+    ckpt = torch.load(best_ckpt, map_location="cpu", weights_only=True)
+    backbone.load_state_dict(ckpt["backbone"])
+    head.load_state_dict(ckpt["head"])
     export_fp16(backbone, args.model, OUTPUT_DIR)
-    print("\nNext: re-run build_irl_embeddings.py to rebuild reference embeddings.")
+    export_cls_head(head, catid_to_label, OUTPUT_DIR)
 
 
 if __name__ == "__main__":

@@ -16,14 +16,15 @@ Phase 1
 - **Status:** complete
 
 ### Phase 2: Supervised DINOv2 Classifier Head
-- [ ] Modify `finetune_dino.py` to train DINOv2 backbone + Linear(768, 356) classifier head jointly
-- [ ] Fine-tune at image size 518 (match inference resolution, avoid mismatch)
-- [ ] Use ArcFace or cross-entropy loss with the supervised head
-- [ ] Export backbone (FP16) and classifier head weights separately
+- [x] Modify `train_dino.py`: Linear(768, 356) head + CrossEntropyLoss (replaced ArcFace)
+- [x] Fine-tune at image size 518 (match inference resolution)
+- [x] Export backbone (FP16) and classifier head weights (cls_head.npy) separately
+- [x] Update slurm script defaults (img_size=518, batch=32, no ArcFace args)
+- [x] Update package.sh for cls_head.npy instead of ref_embeddings
 - [ ] Update `dino_classifier.py` to use linear head instead of kNN/nearest-neighbor
 - [ ] Update `run.py` to load and use the new classifier
-- [ ] Create/update slurm script for the new training pipeline
-- **Status:** pending
+- [ ] Try label smoothing in CrossEntropyLoss for regularization (e.g. label_smoothing=0.1)
+- **Status:** in_progress
 
 ### Phase 3: Crop Test-Time Augmentation (TTA)
 - [ ] Add TTA to `dino_classifier.py` (horizontal flip, scale jitter, color jitter)
