@@ -4,7 +4,7 @@
 Maximize competition score (Score = 0.7 × detection_mAP + 0.3 × classification_mAP) by fixing classification (currently 0.2) with supervised DINOv2 classifier head, then improving detection with TTA + ensemble.
 
 ## Current Phase
-Phase 1
+Phase 2 (code complete — ready to train on HPC)
 
 ## Phases
 
@@ -59,6 +59,9 @@ Phase 1
 | Supervised linear head over nearest-neighbor lookup | kNN gives 0.2 cls mAP — linear head learns decision boundaries between confusable classes, much more discriminative |
 | Fine-tune DINOv2 at 518px | Must match inference resolution. Previous 336px fine-tuning → 518px inference creates representation mismatch |
 | Drop reference embeddings pipeline | Supervised head replaces kNN entirely. Smaller submission, simpler pipeline |
+| CrossEntropyLoss over ArcFace | Closed-set classification (356 fixed classes), simpler, fewer hyperparams, directly optimises the classification objective |
+| Repo restructure: src/ → train/, slurm_scripts/ → scripts/ | Fast competition dev: one place for training code, one for scripts. Removed dead approaches (yolo_cls, embeddings, multiclass slurm) |
+| run_pipeline.sh orchestrator | Single command submits full SLURM chain with dependencies; YOLO + DINOv2 train in parallel |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |

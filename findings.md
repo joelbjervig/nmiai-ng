@@ -303,10 +303,20 @@ outputs = session.run(None, {input_name: arr})
 - Detection-only baseline caps at 70% — classification is essential for top scores
 - L4 GPU with 24GB VRAM allows large models (YOLOv8l/x)
 - 420 MB weight limit accommodates most single models
+- kNN classification with DINOv2 embeddings only achieves 0.2 cls mAP — too noisy for 356 similar classes
+- Supervised Linear(768, 356) head on DINOv2 is the standard transfer learning approach and should dramatically improve classification
+- CrossEntropyLoss preferred over ArcFace for closed-set classification (simpler, fewer hyperparams)
+- Training DINOv2 at 518px (native patch-14 resolution) avoids mismatch with inference resolution
+- A30 24GB GPU on HPC fits DINOv2 518px training with batch=32 + grad checkpointing
 
 ## Technical Decisions
 | Decision | Rationale |
 |----------|-----------|
+| Two-stage YOLO (detect) + DINOv2 (classify) | YOLO strong at detection (0.9 mAP), weak at fine-grained 356-class classification |
+| Supervised linear head over kNN | kNN gives 0.2 cls mAP; linear head learns decision boundaries between confusable classes |
+| CrossEntropyLoss over ArcFace | Closed-set, simpler, directly optimises classification |
+| Fine-tune DINOv2 at 518px | Match inference resolution, avoid representation mismatch |
+| Batch size 32 for DINOv2 training | Safe for 24GB A30 at 518px with grad checkpointing |
 
 ## Issues Encountered
 | Issue | Resolution |
