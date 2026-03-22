@@ -1,12 +1,10 @@
 """DINOv2 product classifier for inference.
 
-Supports two classification modes:
-  1. Linear head: forward pass through trained Linear(768, 356) head
+Supports two modes:
+  1. Linear head (default): forward pass through trained Linear(768, 356)
   2. kNN: cosine similarity against mean reference embeddings per class
 
-Both modes support TTA (horizontal flip averaging).
-
-Designed to work within the competition sandbox (no os module, uses pathlib).
+Designed for competition sandbox (no os module, uses pathlib).
 """
 import json
 from pathlib import Path
@@ -22,8 +20,6 @@ import timm
 
 
 class PadToSquare:
-    """Pad a PIL image to square with neutral gray, preserving aspect ratio."""
-
     def __call__(self, img: Image.Image) -> Image.Image:
         w, h = img.size
         if w == h:
@@ -35,18 +31,6 @@ class PadToSquare:
 
 
 class DINOClassifier:
-    """DINOv2 backbone with linear head or kNN classification.
-
-    Mode is auto-detected based on which files exist:
-      - head_path (cls_head.npy) → linear head mode
-      - embeddings_path (ref_embeddings.npy) → kNN mode
-      - Both → linear head (default), switchable via use_knn flag
-
-    Optional: extract_layer selects which transformer block to use for embeddings.
-      - None (default): use final CLS token (standard)
-      - 0-11: use CLS token from that intermediate block (ViT-B has 12 blocks)
-    """
-
     def __init__(
         self,
         model_path: Path,
@@ -56,15 +40,10 @@ class DINOClassifier:
         img_size: int = 518,
         device: str = "cuda",
         use_knn: bool = False,
-        extract_layer: int = None,
     ):
         self.device = device
-        self.img_size = img_size
-        self.use_knn = use_knn
-        self.extract_layer = extract_layer
-        self._intermediate_output = None
 
-        # Load DINOv2 backbone from FP16 weights
+        # Load backbone
         self.model = timm.create_model(model_name, pretrained=False, num_classes=0)
         state_dict = torch.load(model_path, map_location="cpu", weights_only=True)
         state_dict = {k: v.float() for k, v in state_dict.items()}
@@ -87,9 +66,8 @@ class DINOClassifier:
             self.head.weight.data = weight
             self.head.bias.data = bias
             self.head = self.head.to(device).eval().half()
-            print(f"  Linear head loaded: {num_classes} classes")
 
-        # Load kNN reference embeddings
+        # Load kNN embeddings
         if embeddings_path is not None and embeddings_path.exists():
             ref = np.load(embeddings_path).astype(np.float32)
             self.ref_embeddings = torch.from_numpy(ref).half().to(device)
@@ -97,9 +75,8 @@ class DINOClassifier:
             with open(catids_path) as f:
                 raw = json.load(f)
             self.knn_label_to_catid = {int(k): int(v) for k, v in raw.items()}
-            print(f"  kNN embeddings loaded: {ref.shape[0]} classes, dim={ref.shape[1]}")
 
-        # Determine mode
+        # Pick mode
         if use_knn and self.ref_embeddings is not None:
             self._mode = "knn"
             if self.label_to_catid is None:
@@ -112,7 +89,6 @@ class DINOClassifier:
         else:
             raise ValueError("Need either head_path or embeddings_path")
 
-        # Preprocessing
         self.transform = transforms.Compose([
             PadToSquare(),
             transforms.Resize((img_size, img_size), interpolation=transforms.InterpolationMode.BICUBIC),
@@ -122,87 +98,31 @@ class DINOClassifier:
 
         print(f"DINOClassifier ready: {model_name}, mode={self._mode}, device={device}")
 
-    def _forward_to_layer(self, x: torch.Tensor) -> torch.Tensor:
-        """Run ViT forward up to extract_layer, return CLS token embedding."""
-        # Patch embed + pos embed (timm ViT internals)
-        x = self.model.patch_embed(x)
-        x = self.model._pos_embed(x)
-        x = self.model.patch_drop(x)
-        x = self.model.norm_pre(x)
-
-        # Run blocks up to and including extract_layer
-        for i, block in enumerate(self.model.blocks):
-            x = block(x)
-            if i == self.extract_layer:
-                break
-
-        # CLS token
-        return x[:, 0, :]
-
     @torch.no_grad()
-    def _embed(self, crops: list[Image.Image], batch_size: int = 64) -> torch.Tensor:
-        """Embed crops → (N, D) L2-normalized FP16 tensor."""
-        all_embs = []
+    def classify(self, crops: list[Image.Image], batch_size: int = 64) -> list[dict]:
+        if not crops:
+            return []
+        all_results = []
         for i in range(0, len(crops), batch_size):
             batch_crops = crops[i:i + batch_size]
             tensors = [self.transform(c.convert("RGB")) for c in batch_crops]
             batch = torch.stack(tensors).to(self.device).half()
-            if self.extract_layer is not None:
-                features = self._forward_to_layer(batch)
+            features = self.model(batch)
+
+            if self._mode == "knn":
+                features = F.normalize(features, p=2, dim=-1)
+                sims = features @ self.ref_embeddings.T
+                scores, labels = sims.max(dim=-1)
+                label_map = self.knn_label_to_catid
             else:
-                features = self.model(batch)
-            features = F.normalize(features, p=2, dim=-1)
-            all_embs.append(features)
-        return torch.cat(all_embs, dim=0)
-
-    @torch.no_grad()
-    def _get_logits(self, crops: list[Image.Image], batch_size: int = 64) -> torch.Tensor:
-        """Get raw logits (linear head) or cosine similarities (kNN)."""
-        if self._mode == "knn":
-            embeddings = self._embed(crops, batch_size)
-            # Cosine similarity against reference embeddings (already L2-normed)
-            return embeddings @ self.ref_embeddings.T  # (N, num_classes)
-        else:
-            all_logits = []
-            for i in range(0, len(crops), batch_size):
-                batch_crops = crops[i:i + batch_size]
-                tensors = [self.transform(c.convert("RGB")) for c in batch_crops]
-                batch = torch.stack(tensors).to(self.device).half()
-                features = self.model(batch)
                 logits = self.head(features)
-                all_logits.append(logits)
-            return torch.cat(all_logits, dim=0)
+                probs = logits.softmax(dim=-1)
+                scores, labels = probs.max(dim=-1)
+                label_map = self.label_to_catid
 
-    def _logits_to_results(self, logits: torch.Tensor) -> list[dict]:
-        """Convert logits/similarities to list of {category_id, score} dicts."""
-        if self._mode == "knn":
-            # For kNN, scores are cosine similarities (0-1 range)
-            scores, labels = logits.max(dim=-1)
-            label_map = self.knn_label_to_catid
-        else:
-            probs = logits.softmax(dim=-1)
-            scores, labels = probs.max(dim=-1)
-            label_map = self.label_to_catid
-        return [
-            {"category_id": label_map[label.item()], "score": float(score)}
-            for score, label in zip(scores.cpu(), labels.cpu())
-        ]
-
-    @torch.no_grad()
-    def classify(self, crops: list[Image.Image], batch_size: int = 64) -> list[dict]:
-        """Classify cropped product images."""
-        if not crops:
-            return []
-        logits = self._get_logits(crops, batch_size)
-        return self._logits_to_results(logits)
-
-    @torch.no_grad()
-    def classify_tta(self, crops: list[Image.Image], batch_size: int = 64) -> list[dict]:
-        """Classify with TTA (horizontal flip, average logits/similarities)."""
-        if not crops:
-            return []
-        logits_orig = self._get_logits(crops, batch_size)
-        flipped = [c.transpose(Image.FLIP_LEFT_RIGHT) for c in crops]
-        logits_flip = self._get_logits(flipped, batch_size)
-        logits_avg = (logits_orig + logits_flip) / 2.0
-        return self._logits_to_results(logits_avg)
+            for score, label in zip(scores.cpu(), labels.cpu()):
+                all_results.append({
+                    "category_id": label_map[label.item()],
+                    "score": float(score),
+                })
+        return all_results
