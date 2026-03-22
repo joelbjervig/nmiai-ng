@@ -59,7 +59,6 @@ def main():
     print("Loading DINOv2 classifier...")
     classifier = DINOClassifier(
         model_path=DINO_WEIGHTS,
-        head_path=CLS_HEAD,
         embeddings_path=REF_EMBEDDINGS if REF_EMBEDDINGS.exists() else None,
         device=device,
         use_knn=REF_EMBEDDINGS.exists(),
