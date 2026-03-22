@@ -77,7 +77,9 @@ class DINOClassifier:
             self.knn_label_to_catid = {int(k): int(v) for k, v in raw.items()}
 
         # Pick mode
-        if use_knn and self.ref_embeddings is not None:
+        if use_knn and self.ref_embeddings is not None and self.head is not None:
+            self._mode = "ensemble"  # both available → merge them
+        elif use_knn and self.ref_embeddings is not None:
             self._mode = "knn"
             if self.label_to_catid is None:
                 self.label_to_catid = self.knn_label_to_catid
@@ -109,9 +111,21 @@ class DINOClassifier:
             batch = torch.stack(tensors).to(self.device).half()
             features = self.model(batch)
 
-            if self._mode == "knn":
-                features = F.normalize(features, p=2, dim=-1)
-                sims = features @ self.ref_embeddings.T
+            if self._mode == "ensemble":
+                # Linear head probabilities
+                logits = self.head(features)
+                head_probs = logits.softmax(dim=-1)  # (B, C)
+                # kNN similarities → softmax to same scale
+                feat_norm = F.normalize(features, p=2, dim=-1)
+                sims = feat_norm @ self.ref_embeddings.T  # (B, C)
+                knn_probs = (sims * 10).softmax(dim=-1)  # temperature=0.1 sharpens
+                # Average
+                combined = (head_probs + knn_probs) / 2.0
+                scores, labels = combined.max(dim=-1)
+                label_map = self.label_to_catid
+            elif self._mode == "knn":
+                feat_norm = F.normalize(features, p=2, dim=-1)
+                sims = feat_norm @ self.ref_embeddings.T
                 scores, labels = sims.max(dim=-1)
                 label_map = self.knn_label_to_catid
             else:

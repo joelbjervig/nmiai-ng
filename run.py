@@ -23,6 +23,7 @@ MODEL_DIR = ROOT / "model"
 YOLO_WEIGHTS = MODEL_DIR / "best.onnx"
 DINO_WEIGHTS = MODEL_DIR / "vit_base_patch14_dinov2_fp16.pth"
 CLS_HEAD = MODEL_DIR / "cls_head.npy"
+REF_EMBEDDINGS = MODEL_DIR / "ref_embeddings.npy"
 
 CONF_THRESHOLD = 0.25
 IOU_THRESHOLD = 0.45
@@ -89,12 +90,14 @@ def main():
     input_name = session.get_inputs()[0].name
     print(f"YOLO ready: {session.get_providers()}")
 
-    # Load DINOv2 classifier (linear head)
+    # Load DINOv2 classifier (ensemble if embeddings available, else linear head)
     print("Loading DINOv2 classifier...")
     classifier = DINOClassifier(
         model_path=DINO_WEIGHTS,
         head_path=CLS_HEAD,
+        embeddings_path=REF_EMBEDDINGS if REF_EMBEDDINGS.exists() else None,
         device=device,
+        use_knn=REF_EMBEDDINGS.exists(),  # triggers ensemble when both available
     )
 
     # Inference
