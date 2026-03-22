@@ -16,9 +16,8 @@ wheels/
 *.onnx
 *.safetensors
 *.npy
-model/
+
 data/
-runs/
 output/
 submission_staging/
 
