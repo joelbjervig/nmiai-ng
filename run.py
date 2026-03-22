@@ -81,14 +81,46 @@ def postprocess(output: np.ndarray, scale: float, pad_w: int, pad_h: int,
                 img_w: int, img_h: int, conf_thr: float = 0.25, iou_thr: float = 0.45):
     """Parse YOLO ONNX output → (boxes_xyxy, scores) in original image coords.
 
-    Standard ultralytics ONNX output shape: [1, 4+nc, num_predictions]
-    For single-class (nc=1): [1, 5, N] where row 0-3 = cx,cy,w,h and row 4 = conf.
+    Handles both formats:
+      - YOLOv8: [1, 4+nc, N] where rows 0-3 = cx,cy,w,h, row 4+ = class scores
+      - YOLO26 e2e: [1, N, 6] where cols = x1,y1,x2,y2,score,class_id
     """
-    # output shape: [1, 5, N] → transpose to [N, 5]
-    preds = output[0].T  # (N, 5)
+    print(f"  ONNX output shape: {output.shape}", flush=True)
 
-    # Filter by confidence
-    scores = preds[:, 4]
+    # Detect format based on shape
+    if output.ndim == 3 and output.shape[2] == 6:
+        # YOLO26 end-to-end format: [1, N, 6] = x1,y1,x2,y2,score,class_id
+        preds = output[0]  # (N, 6)
+        scores = preds[:, 4]
+        mask = scores > conf_thr
+        preds = preds[mask]
+        scores = scores[mask]
+
+        if len(preds) == 0:
+            return np.zeros((0, 4)), np.array([])
+
+        # Already x1,y1,x2,y2 — just rescale from letterbox to original
+        x1 = (preds[:, 0] - pad_w) / scale
+        y1 = (preds[:, 1] - pad_h) / scale
+        x2 = (preds[:, 2] - pad_w) / scale
+        y2 = (preds[:, 3] - pad_h) / scale
+    else:
+        # YOLOv8 format: [1, 4+nc, N] → transpose to [N, 4+nc]
+        preds = output[0].T
+
+        scores = preds[:, 4:].max(axis=1)
+        mask = scores > conf_thr
+        preds = preds[mask]
+        scores = scores[mask]
+
+        if len(preds) == 0:
+            return np.zeros((0, 4)), np.array([])
+
+        cx, cy, w, h = preds[:, 0], preds[:, 1], preds[:, 2], preds[:, 3]
+        x1 = (cx - w / 2 - pad_w) / scale
+        y1 = (cy - h / 2 - pad_h) / scale
+        x2 = (cx + w / 2 - pad_w) / scale
+        y2 = (cy + h / 2 - pad_h) / scale
     mask = scores > conf_thr
     preds = preds[mask]
     scores = scores[mask]
