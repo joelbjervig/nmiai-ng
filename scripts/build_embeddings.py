@@ -52,8 +52,8 @@ def main():
     parser.add_argument("--min-crop-size", type=int, default=20)
     parser.add_argument("--max-per-class", type=int, default=10,
                         help="Max crops per class for mean embedding (0 = use all)")
-    parser.add_argument("--layer", type=int, default=None,
-                        help="Extract from intermediate block (0-11 for ViT-B). None=final CLS token.")
+    parser.add_argument("--layer", type=int, default=11,
+                        help="Extract from transformer block (0-11 for ViT-B). 11=last block, None=final output after norm.")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
 
