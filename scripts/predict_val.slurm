@@ -23,6 +23,7 @@ INPUT=${INPUT:-data/yolo_single/val/images}
 OUTPUT=${OUTPUT:-output/val_predictions.json}
 NO_TTA=${NO_TTA:-0}
 USE_KNN=${USE_KNN:-0}
+EXTRACT_LAYER=${EXTRACT_LAYER:-}
 
 mkdir -p "$(dirname "${OUTPUT}")"
 
@@ -60,6 +61,9 @@ TTA_FLAG=""
 
 KNN_FLAG=""
 [[ "${USE_KNN}" == "1" ]] && KNN_FLAG="--use-knn"
+
+LAYER_FLAG=""
+[[ -n "${EXTRACT_LAYER}" ]] && LAYER_FLAG="--extract-layer ${EXTRACT_LAYER}"
 
 echo "Flags: TTA=${NO_TTA:+OFF}${NO_TTA:-ON} KNN=${USE_KNN}"
 
