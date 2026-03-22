@@ -77,13 +77,16 @@ def main():
     else:
         backbone_state = ckpt["backbone"]
 
-    # Export backbone FP16
+    # Export backbone FP16 + cls_head merged into one .pth file
     backbone_fp16 = {k: v.half() for k, v in backbone_state.items()}
+    backbone_fp16["cls_head.weight"] = ckpt["head"]["weight"].cpu().half()
+    backbone_fp16["cls_head.bias"] = ckpt["head"]["bias"].cpu().half()
+    backbone_fp16["label_to_catid"] = label_to_catid
     backbone_path = MODEL_DIR / f"{args.model_name}_fp16.pth"
     torch.save(backbone_fp16, backbone_path)
-    print(f"Exported backbone → {backbone_path} ({backbone_path.stat().st_size / 1e6:.1f} MB)")
+    print(f"Exported backbone + head → {backbone_path} ({backbone_path.stat().st_size / 1e6:.1f} MB)")
 
-    # Export cls_head.npy
+    # Also export cls_head.npy for backwards compatibility
     head_data = {
         "weight": ckpt["head"]["weight"].cpu().half().numpy(),
         "bias": ckpt["head"]["bias"].cpu().half().numpy(),
