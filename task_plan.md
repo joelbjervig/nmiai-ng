@@ -25,8 +25,9 @@ Phase 6 (YOLO26 upgrade — training in progress)
 - **Status:** complete
 
 ### Phase 4: Detection TTA + WBF
-- [x] Multi-scale YOLO (1280 + 1024) + flip + ensemble-boxes WBF
+- [x] Flip + ensemble-boxes WBF (multi-scale disabled — ONNX fixed input size)
 - [x] --no-tta flag for fast fallback
+- [x] Bug fix: flip TTA was dead code (required multi-scale), now triggers on DETECT_FLIP
 - **Status:** complete
 
 ### Phase 5: Package & Submit

@@ -16,11 +16,13 @@ set -euo pipefail
 #   sbatch scripts/predict_val.slurm
 #   sbatch --export=ALL,RUN_DIR=runs/yolo26l_detect scripts/predict_val.slurm
 #   sbatch --export=ALL,NO_TTA=1 scripts/predict_val.slurm
+#   sbatch --export=ALL,USE_KNN=1 scripts/predict_val.slurm
 
 RUN_DIR=${RUN_DIR:-}
 INPUT=${INPUT:-data/yolo_single/val/images}
 OUTPUT=${OUTPUT:-output/val_predictions.json}
 NO_TTA=${NO_TTA:-0}
+USE_KNN=${USE_KNN:-0}
 
 mkdir -p "$(dirname "${OUTPUT}")"
 
@@ -56,14 +58,21 @@ fi
 TTA_FLAG=""
 [[ "${NO_TTA}" == "1" ]] && TTA_FLAG="--no-tta"
 
+KNN_FLAG=""
+[[ "${USE_KNN}" == "1" ]] && KNN_FLAG="--use-knn"
+
+echo "Flags: TTA=${NO_TTA:+OFF}${NO_TTA:-ON} KNN=${USE_KNN}"
+
 if command -v uv >/dev/null 2>&1; then
     uv run python run.py \
         --input "${INPUT}" \
         --output "${OUTPUT}" \
-        ${TTA_FLAG}
+        ${TTA_FLAG} \
+        ${KNN_FLAG}
 else
     python run.py \
         --input "${INPUT}" \
         --output "${OUTPUT}" \
-        ${TTA_FLAG}
+        ${TTA_FLAG} \
+        ${KNN_FLAG}
 fi

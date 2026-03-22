@@ -26,6 +26,7 @@ MODEL_DIR = ROOT / "model"
 YOLO_WEIGHTS = MODEL_DIR / "best.onnx"
 DINO_WEIGHTS = MODEL_DIR / "vit_base_patch14_dinov2_fp16.pth"
 CLS_HEAD = MODEL_DIR / "cls_head.npy"
+REF_EMBEDDINGS = MODEL_DIR / "ref_embeddings.npy"
 
 # Detection hyperparameters
 CONF_THRESHOLD = 0.25
@@ -34,7 +35,7 @@ MAX_DET = 1000
 DINO_BATCH_SIZE = 64
 
 # TTA settings
-DETECT_SCALES = [1280]
+wDETECT_SCALES = [1280]
 DETECT_FLIP = True
 WBF_IOU_THR = 0.55
 WBF_SKIP_BOX_THR = 0.01
@@ -243,6 +244,7 @@ def main():
     parser.add_argument("--input", required=True, help="Directory with img_*.jpg files")
     parser.add_argument("--output", required=True, help="Output predictions.json path")
     parser.add_argument("--no-tta", action="store_true", help="Disable all TTA (faster)")
+    parser.add_argument("--use-knn", action="store_true", help="Use kNN embedding matching instead of linear head")
     args = parser.parse_args()
 
     input_dir = Path(args.input)
@@ -265,7 +267,9 @@ def main():
     classifier = DINOClassifier(
         model_path=DINO_WEIGHTS,
         head_path=CLS_HEAD,
+        embeddings_path=REF_EMBEDDINGS if args.use_knn else None,
         device=device,
+        use_knn=args.use_knn,
     )
 
     # ── Inference loop ──────────────────────────────────────────────────────

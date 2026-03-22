@@ -38,22 +38,21 @@
 ## Session: 2026-03-22
 
 ### Phase 6: YOLO26 Upgrade
-- **Status:** in_progress
+- **Status:** in_progress — training done, evaluating
 - **Started:** 2026-03-22
 - Actions taken:
   - Rewrote run.py to use onnxruntime (no ultralytics dependency at inference)
   - Added letterbox preprocessing, NMS, YOLODetector class for ONNX
+  - Handles both YOLOv8 [1,5,N] and YOLO26 e2e [1,300,6] output formats
   - Updated train_yolo.py: yolo26l.pt default, auto ONNX export, "robust" augmentation
   - Updated package.sh: best.onnx instead of best.pt
   - Updated pyproject.toml: ultralytics 8.1.0 → 8.4.0 for YOLO26
-- Blocking: need ultralytics>=8.4 on HPC to download/train YOLO26
-- Files modified:
-  - run.py (rewritten — ONNX inference)
-  - train/train_yolo.py (YOLO26, robust aug, ONNX export)
-  - scripts/package.sh (best.onnx)
-  - scripts/predict_val.slurm (best.onnx)
-  - scripts/train_yolo.slurm (yolo26l defaults)
-  - pyproject.toml (ultralytics==8.4.0)
+  - Fixed 5 failed YOLO26 training attempts before getting stable training (detect5-8)
+  - Best run: yolo26l_detect8 (freeze=16, batch=8, lr=0.0005, optimizer=auto, 500 epochs)
+  - Created export_yolo_onnx.slurm for manual ONNX export
+  - Fixed bug: detection flip TTA was dead code (required multi-scale)
+  - Fixed bug: YOLO26 e2e output format different from YOLOv8
+  - Added det×cls confidence score multiplication for mAP ranking
 
 ## Test Results
 
@@ -70,16 +69,20 @@
 | 2026-03-21 | SLURM afterok:id1:afterok:id2 | Fixed to afterok:id1:id2 |
 | 2026-03-21 | ensemble_boxes ModuleNotFoundError | Added to pyproject.toml |
 | 2026-03-22 | yolo26l.pt FileNotFoundError | ultralytics too old, need >=8.4 |
+| 2026-03-22 | ONNX fixed input size 1280 | Disabled multi-scale TTA, use flip only |
+| 2026-03-22 | YOLO26 e2e output [1,300,6] ≠ YOLOv8 [1,5,N] | Added format detection in postprocess |
+| 2026-03-22 | Detection flip TTA was dead code | Fixed: trigger on DETECT_FLIP not just multi-scale |
+| 2026-03-22 | 0 predictions from wrong ONNX (broken detect run) | Used detect8 weights instead |
 
 ## 5-Question Reboot Check
 
 | Question | Answer |
 |----------|--------|
-| Where am I? | Phase 6: YOLO26 upgrade, blocked on ultralytics version on HPC |
-| Where am I going? | Train YOLO26 → evaluate → submit |
+| Where am I? | Phase 6: YOLO26 trained (detect8), evaluating with ONNX pipeline |
+| Where am I going? | Eval YOLO26 locally → submit → compare with YOLOv8 baseline |
 | What's the goal? | Close the 0.15 local→competition gap, maximize competition score |
-| What have I learned? | LoRA helps (0.07 gap vs 0.12), but distribution shift is the main issue |
-| What have I done? | Full ONNX inference pipeline, LoRA DINOv2, TTA+WBF, YOLO26 support |
+| What have I learned? | LoRA helps (0.07 gap vs 0.12), YOLO26 e2e has different output format, distribution shift is main issue |
+| What have I done? | Full ONNX pipeline, LoRA DINOv2, TTA+WBF, YOLO26 training + export, pipeline audit |
 
 ---
 *Update after completing each phase or encountering errors*
