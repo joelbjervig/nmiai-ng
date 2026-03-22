@@ -31,10 +31,14 @@ if command -v uv >/dev/null 2>&1; then
     uv run python scripts/build_embeddings.py \
         --weights "${WEIGHTS}" \
         --batch-size "${BATCH_SIZE}" \
-        --img-size "${IMG_SIZE}"
+        --img-size "${IMG_SIZE}" \
+        --layer "${LAYER}" \
+        --max-per-class "${MAX_PER_CLASS}"
 else
     python scripts/build_embeddings.py \
         --weights "${WEIGHTS}" \
         --batch-size "${BATCH_SIZE}" \
-        --img-size "${IMG_SIZE}"
+        --img-size "${IMG_SIZE}" \
+        --layer "${LAYER}" \
+        --max-per-class "${MAX_PER_CLASS}"
 fi
