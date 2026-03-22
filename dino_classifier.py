@@ -41,6 +41,10 @@ class DINOClassifier:
       - head_path (cls_head.npy) → linear head mode
       - embeddings_path (ref_embeddings.npy) → kNN mode
       - Both → linear head (default), switchable via use_knn flag
+
+    Optional: extract_layer selects which transformer block to use for embeddings.
+      - None (default): use final CLS token (standard)
+      - 0-11: use CLS token from that intermediate block (ViT-B has 12 blocks)
     """
 
     def __init__(
@@ -52,10 +56,13 @@ class DINOClassifier:
         img_size: int = 518,
         device: str = "cuda",
         use_knn: bool = False,
+        extract_layer: int = None,
     ):
         self.device = device
         self.img_size = img_size
         self.use_knn = use_knn
+        self.extract_layer = extract_layer
+        self._intermediate_output = None
 
         # Load DINOv2 backbone from FP16 weights
         self.model = timm.create_model(model_name, pretrained=False, num_classes=0)
@@ -65,6 +72,19 @@ class DINOClassifier:
         self.model = self.model.to(device).eval().half()
 
         embed_dim = self.model.num_features
+
+        # Register hook for intermediate layer extraction
+        if extract_layer is not None:
+            total_blocks = len(self.model.blocks)
+            if extract_layer < 0 or extract_layer >= total_blocks:
+                raise ValueError(f"extract_layer={extract_layer} out of range [0, {total_blocks-1}]")
+
+            def hook_fn(module, input, output):
+                # ViT block output: (B, N_tokens, D) — take CLS token (index 0)
+                self._intermediate_output = output[:, 0, :]
+
+            self.model.blocks[extract_layer].register_forward_hook(hook_fn)
+            print(f"  Extracting features from block {extract_layer}/{total_blocks-1}")
         self.head = None
         self.ref_embeddings = None
         self.label_to_catid = None
@@ -123,7 +143,8 @@ class DINOClassifier:
             batch_crops = crops[i:i + batch_size]
             tensors = [self.transform(c.convert("RGB")) for c in batch_crops]
             batch = torch.stack(tensors).to(self.device).half()
-            features = self.model(batch)
+            output = self.model(batch)  # also triggers hook if extract_layer is set
+            features = self._intermediate_output if self.extract_layer is not None else output
             features = F.normalize(features, p=2, dim=-1)
             all_embs.append(features)
         return torch.cat(all_embs, dim=0)
