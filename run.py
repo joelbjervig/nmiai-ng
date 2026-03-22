@@ -27,8 +27,7 @@ from dino_classifier import DINOClassifier
 
 MODEL_DIR = ROOT / "model"
 YOLO_WEIGHTS = MODEL_DIR / "best.pt"
-DINO_WEIGHTS = MODEL_DIR / "vit_base_patch14_dinov2_fp16.pth"
-CLS_HEAD = MODEL_DIR / "cls_head.npy"
+DINO_WEIGHTS = MODEL_DIR / "vit_base_patch14_dinov2_fp16.pth"  # includes cls_head
 REF_EMBEDDINGS = MODEL_DIR / "ref_embeddings.npy"
 
 CONF_THRESHOLD = 0.25
