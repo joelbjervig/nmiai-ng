@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
-# package.sh — Build submission zip from trained model artifacts.
+# package.sh — Build submission zip (max 3 weight files).
 #
-# Run on the HPC after train_yolo and train_dino have completed.
+# Weight files: best.pt (YOLO), _fp16.pth (DINOv2+head), ref_embeddings.npy (kNN)
+# Non-weight files: run.py, dino_classifier.py, ref_catids.json
 #
 # Usage:
 #   ./scripts/package.sh                          # auto-detect latest run
-#   ./scripts/package.sh runs/yolo26l_detect       # specific run directory
-#
-# Environment overrides:
-#   DINO_MODEL=vit_small_patch14_dinov2 ./scripts/package.sh
+#   ./scripts/package.sh runs/yolov8l_detect11    # specific YOLOv8 run
 
 set -euo pipefail
 
@@ -27,28 +25,23 @@ MAX_SIZE_MB=420
 echo "=== NorgesGruppen Submission Packager ==="
 echo ""
 
-# ── Find YOLO ONNX weights ──────────────────────────────────────────────────
+# ── Find YOLO best.pt ────────────────────────────────────────────────────────
 if [[ -n "$RUN_DIR" ]]; then
-    BEST_ONNX="$ROOT/$RUN_DIR/weights/best.onnx"
+    BEST_PT="$ROOT/$RUN_DIR/weights/best.pt"
 else
-    # Auto-detect: most recently modified best.onnx under runs/
-    BEST_ONNX=$(find "$ROOT/runs" -name "best.onnx" -printf "%T@ %p\n" 2>/dev/null \
+    BEST_PT=$(find "$ROOT/runs" -name "best.pt" -printf "%T@ %p\n" 2>/dev/null \
               | sort -n | tail -1 | awk '{print $2}')
 fi
-
-# Fallback to model/best.onnx
-if [[ -z "$BEST_ONNX" || ! -f "$BEST_ONNX" ]]; then
-    BEST_ONNX="$MODEL_DIR/best.onnx"
+if [[ -z "$BEST_PT" || ! -f "$BEST_PT" ]]; then
+    BEST_PT="$MODEL_DIR/best.pt"
 fi
-
-if [[ ! -f "$BEST_ONNX" ]]; then
-    echo "ERROR: best.onnx not found."
-    echo "  Train a YOLO model with --export-onnx, or place best.onnx in model/"
+if [[ ! -f "$BEST_PT" ]]; then
+    echo "ERROR: best.pt not found."
     exit 1
 fi
-echo "YOLO ONNX      : $BEST_ONNX"
+echo "YOLO weights   : $BEST_PT"
 
-# ── Find DINOv2 weights ───────────────────────────────────────────────────────
+# ── Find DINOv2 weights (backbone + head merged) ─────────────────────────────
 if [[ -n "$DINO_WEIGHTS" ]]; then
     DINO_PT="$ROOT/$DINO_WEIGHTS"
 else
@@ -60,28 +53,14 @@ if [[ ! -f "$DINO_PT" ]]; then
 fi
 echo "DINOv2 weights : $DINO_PT"
 
-# ── Find classifier head weights ─────────────────────────────────────────────
-CLS_HEAD="$MODEL_DIR/cls_head.npy"
-if [[ ! -f "$CLS_HEAD" ]]; then
-    echo "ERROR: Classifier head not found: $CLS_HEAD"
-    echo "  Run: sbatch scripts/train_dino.slurm"
-    exit 1
-fi
-echo "Classifier head: $CLS_HEAD"
-
+# ── Find kNN embeddings (optional) ───────────────────────────────────────────
 REF_EMBEDDINGS="$MODEL_DIR/ref_embeddings.npy"
 REF_CATIDS="$MODEL_DIR/ref_catids.json"
-if [[ ! -f "$REF_EMBEDDINGS" ]]; then
-    echo "ERROR: Reference embeddings not found: $REF_EMBEDDINGS"
-    echo "  Run: sbatch scripts/build_embeddings.slurm"
-    exit 1
+HAS_KNN=0
+if [[ -f "$REF_EMBEDDINGS" && -f "$REF_CATIDS" ]]; then
+    HAS_KNN=1
+    echo "Ref embeddings : $REF_EMBEDDINGS"
 fi
-if [[ ! -f "$REF_CATIDS" ]]; then
-    echo "ERROR: Reference cat IDs not found: $REF_CATIDS"
-    exit 1
-fi
-echo "Ref embeddings : $REF_EMBEDDINGS"
-echo "Ref cat IDs    : $REF_CATIDS"
 
 # ── Build staging directory ───────────────────────────────────────────────────
 echo ""
@@ -89,33 +68,37 @@ echo "Building staging directory..."
 rm -rf "$STAGING"
 mkdir -p "$STAGING/model"
 
-cp "$ROOT/run.py"                  "$STAGING/run.py"
-cp "$ROOT/dino_classifier.py"      "$STAGING/dino_classifier.py"
-cp "$BEST_ONNX"                    "$STAGING/model/best.onnx"
-cp "$DINO_PT"                      "$STAGING/model/vit_base_patch14_dinov2_fp16.pth"
-cp "$CLS_HEAD"                     "$STAGING/model/cls_head.npy"
-cp "$REF_EMBEDDINGS"               "$STAGING/model/ref_embeddings.npy"
-cp "$REF_CATIDS"                   "$STAGING/model/ref_catids.json"
+cp "$ROOT/run.py"              "$STAGING/run.py"
+cp "$ROOT/dino_classifier.py"  "$STAGING/dino_classifier.py"
+cp "$BEST_PT"                  "$STAGING/model/best.pt"
+cp "$DINO_PT"                  "$STAGING/model/vit_base_patch14_dinov2_fp16.pth"
+if (( HAS_KNN )); then
+    cp "$REF_EMBEDDINGS"       "$STAGING/model/ref_embeddings.npy"
+    cp "$REF_CATIDS"           "$STAGING/model/ref_catids.json"
+fi
 
 # ── Size check ────────────────────────────────────────────────────────────────
-yolo_mb=$(du -sm "$STAGING/model/best.onnx" | awk '{print $1}')
-dino_mb=$(du -sm "$STAGING/model/vit_base_patch14_dinov2_fp16.pth" | awk '{print $1}')
-head_mb=$(du -sm "$STAGING/model/cls_head.npy" | awk '{print $1}')
-emb_mb=$(du -sm "$STAGING/model/ref_embeddings.npy" | awk '{print $1}')
 total_mb=$(du -sm "$STAGING" | awk '{print $1}')
-
 echo ""
 echo "Size budget:"
-printf "  %-36s %5s MB\n" "best.onnx"                          "$yolo_mb"
-printf "  %-36s %5s MB\n" "$(basename "$DINO_PT") → dino"     "$dino_mb"
-printf "  %-36s %5s MB\n" "cls_head.npy"                       "$head_mb"
-printf "  %-36s %5s MB\n" "ref_embeddings.npy"                 "$emb_mb"
+for f in "$STAGING"/model/*; do
+    mb=$(du -sm "$f" | awk '{print $1}')
+    printf "  %-40s %5s MB\n" "$(basename "$f")" "$mb"
+done
 echo "  ─────────────────────────────────────────────"
-printf "  %-36s %5s MB  (limit: %s MB)\n" "Total (uncompressed)" "$total_mb" "$MAX_SIZE_MB"
+printf "  %-40s %5s MB  (limit: %s MB)\n" "Total (uncompressed)" "$total_mb" "$MAX_SIZE_MB"
+
+# Count weight files
+WEIGHT_COUNT=$(find "$STAGING/model" -type f \( -name "*.pt" -o -name "*.pth" -o -name "*.onnx" -o -name "*.safetensors" -o -name "*.npy" \) | wc -l | tr -d ' ')
+echo "  Weight files: $WEIGHT_COUNT / 3"
 
 if (( total_mb > MAX_SIZE_MB )); then
-    echo ""
-    echo "ERROR: Staging exceeds ${MAX_SIZE_MB} MB limit (${total_mb} MB)."
+    echo "ERROR: Exceeds ${MAX_SIZE_MB} MB limit."
+    rm -rf "$STAGING"
+    exit 1
+fi
+if (( WEIGHT_COUNT > 3 )); then
+    echo "ERROR: Too many weight files ($WEIGHT_COUNT > 3)."
     rm -rf "$STAGING"
     exit 1
 fi
@@ -133,5 +116,6 @@ echo ""
 echo "Done!"
 echo "  submission.zip  : ${zip_mb} MB (compressed)"
 echo "  Uncompressed    : ${total_mb} MB / ${MAX_SIZE_MB} MB"
+echo "  Weight files    : ${WEIGHT_COUNT} / 3"
 echo ""
 echo "Upload at: https://app.ainm.no"
