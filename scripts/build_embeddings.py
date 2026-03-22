@@ -52,6 +52,8 @@ def main():
     parser.add_argument("--min-crop-size", type=int, default=20)
     parser.add_argument("--max-per-class", type=int, default=10,
                         help="Max crops per class for mean embedding (0 = use all)")
+    parser.add_argument("--layer", type=int, default=None,
+                        help="Extract from intermediate block (0-11 for ViT-B). None=final CLS token.")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
 
@@ -82,6 +84,17 @@ def main():
     state_dict = {k: v.float() for k, v in state_dict.items()}
     model.load_state_dict(state_dict)
     model = model.to(args.device).eval().half()
+
+    # Optional: hook for intermediate layer extraction
+    intermediate_output = {}
+    if args.layer is not None:
+        total_blocks = len(model.blocks)
+        print(f"Extracting from block {args.layer}/{total_blocks-1}")
+
+        def hook_fn(module, input, output):
+            intermediate_output["features"] = output[:, 0, :]  # CLS token
+
+        model.blocks[args.layer].register_forward_hook(hook_fn)
 
     transform = transforms.Compose([
         PadToSquare(),
@@ -142,7 +155,8 @@ def main():
             batch = crops[i:i + args.batch_size]
             tensors = torch.stack([transform(c) for c in batch]).to(args.device).half()
             with torch.no_grad():
-                features = model(tensors)
+                output = model(tensors)
+                features = intermediate_output["features"] if args.layer is not None else output
                 features = F.normalize(features, p=2, dim=-1)
             all_embs.append(features)
 
