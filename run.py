@@ -91,10 +91,6 @@ def postprocess(output: np.ndarray, scale: float, pad_w: int, pad_h: int,
         # YOLO26 end-to-end: [1, N, 6] = x1,y1,x2,y2,score,class_id
         preds = output[0]  # (N, 6)
         scores = preds[:, 4]
-        # Debug: print score stats on first call
-        if scores.max() > 0:
-            print(f"  e2e scores: min={scores.min():.4f} max={scores.max():.4f} "
-                  f"mean={scores[scores > 0].mean():.4f} n_above_thr={int((scores > conf_thr).sum())}", flush=True)
         mask = scores > conf_thr
         preds = preds[mask]
         scores = scores[mask]
@@ -254,7 +250,7 @@ def main():
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    use_detect_tta = not args.no_tta and len(DETECT_SCALES) > 1
+    use_detect_tta = not args.no_tta and (len(DETECT_SCALES) > 1 or DETECT_FLIP)
     use_crop_tta = not args.no_tta and USE_CROP_TTA
 
     print(f"Device: {device}")
