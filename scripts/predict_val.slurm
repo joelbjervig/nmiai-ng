@@ -72,11 +72,13 @@ if command -v uv >/dev/null 2>&1; then
         --input "${INPUT}" \
         --output "${OUTPUT}" \
         ${TTA_FLAG} \
-        ${KNN_FLAG}
+        ${KNN_FLAG} \
+        ${LAYER_FLAG}
 else
     python run.py \
         --input "${INPUT}" \
         --output "${OUTPUT}" \
         ${TTA_FLAG} \
-        ${KNN_FLAG}
+        ${KNN_FLAG} \
+        ${LAYER_FLAG}
 fi
