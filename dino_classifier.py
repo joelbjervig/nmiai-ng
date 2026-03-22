@@ -43,20 +43,36 @@ class DINOClassifier:
     ):
         self.device = device
 
-        # Load backbone
+        # Load backbone + head from single .pth file
         self.model = timm.create_model(model_name, pretrained=False, num_classes=0)
-        state_dict = torch.load(model_path, map_location="cpu", weights_only=True)
-        state_dict = {k: v.float() for k, v in state_dict.items()}
-        self.model.load_state_dict(state_dict)
-        self.model = self.model.to(device).eval().half()
+        state_dict = torch.load(model_path, map_location="cpu", weights_only=False)
 
-        embed_dim = self.model.num_features
+        # Extract cls_head and label mapping if embedded in state_dict
         self.head = None
         self.ref_embeddings = None
         self.label_to_catid = None
 
-        # Load linear head
-        if head_path is not None and head_path.exists():
+        head_weight = state_dict.pop("cls_head.weight", None)
+        head_bias = state_dict.pop("cls_head.bias", None)
+        label_map = state_dict.pop("label_to_catid", None)
+
+        backbone_state = {k: v.float() for k, v in state_dict.items()}
+        self.model.load_state_dict(backbone_state)
+        self.model = self.model.to(device).eval().half()
+
+        embed_dim = self.model.num_features
+
+        # Build linear head from embedded weights
+        if head_weight is not None and head_bias is not None:
+            self.label_to_catid = {int(k): int(v) for k, v in label_map.items()}
+            num_classes = head_weight.shape[0]
+            self.head = nn.Linear(embed_dim, num_classes)
+            self.head.weight.data = head_weight.float()
+            self.head.bias.data = head_bias.float()
+            self.head = self.head.to(device).eval().half()
+
+        # Fallback: load head from separate .npy file
+        if self.head is None and head_path is not None and head_path.exists():
             head_data = np.load(head_path, allow_pickle=True).item()
             weight = torch.from_numpy(head_data["weight"].astype(np.float32))
             bias = torch.from_numpy(head_data["bias"].astype(np.float32))
