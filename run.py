@@ -83,15 +83,18 @@ def postprocess(output: np.ndarray, scale: float, pad_w: int, pad_h: int,
 
     Handles both formats:
       - YOLOv8: [1, 4+nc, N] where rows 0-3 = cx,cy,w,h, row 4+ = class scores
-      - YOLO26 e2e: [1, N, 6] where cols = x1,y1,x2,y2,score,class_id
+      - YOLO26 e2e: [1, N, 6] where cols = x1,y1,x2,y2,score,class_id (NMS-free)
     """
-    print(f"  ONNX output shape: {output.shape}", flush=True)
+    is_e2e = output.ndim == 3 and output.shape[2] == 6
 
-    # Detect format based on shape
-    if output.ndim == 3 and output.shape[2] == 6:
-        # YOLO26 end-to-end format: [1, N, 6] = x1,y1,x2,y2,score,class_id
+    if is_e2e:
+        # YOLO26 end-to-end: [1, N, 6] = x1,y1,x2,y2,score,class_id
         preds = output[0]  # (N, 6)
         scores = preds[:, 4]
+        # Debug: print score stats on first call
+        if scores.max() > 0:
+            print(f"  e2e scores: min={scores.min():.4f} max={scores.max():.4f} "
+                  f"mean={scores[scores > 0].mean():.4f} n_above_thr={int((scores > conf_thr).sum())}", flush=True)
         mask = scores > conf_thr
         preds = preds[mask]
         scores = scores[mask]
@@ -99,15 +102,14 @@ def postprocess(output: np.ndarray, scale: float, pad_w: int, pad_h: int,
         if len(preds) == 0:
             return np.zeros((0, 4)), np.array([])
 
-        # Already x1,y1,x2,y2 — just rescale from letterbox to original
+        # Already x1,y1,x2,y2 — rescale from letterbox to original
         x1 = (preds[:, 0] - pad_w) / scale
         y1 = (preds[:, 1] - pad_h) / scale
         x2 = (preds[:, 2] - pad_w) / scale
         y2 = (preds[:, 3] - pad_h) / scale
     else:
-        # YOLOv8 format: [1, 4+nc, N] → transpose to [N, 4+nc]
+        # YOLOv8: [1, 4+nc, N] → transpose to [N, 4+nc]
         preds = output[0].T
-
         scores = preds[:, 4:].max(axis=1)
         mask = scores > conf_thr
         preds = preds[mask]
@@ -121,25 +123,6 @@ def postprocess(output: np.ndarray, scale: float, pad_w: int, pad_h: int,
         y1 = (cy - h / 2 - pad_h) / scale
         x2 = (cx + w / 2 - pad_w) / scale
         y2 = (cy + h / 2 - pad_h) / scale
-    mask = scores > conf_thr
-    preds = preds[mask]
-    scores = scores[mask]
-
-    if len(preds) == 0:
-        return np.zeros((0, 4)), np.array([])
-
-    # Convert cx, cy, w, h → x1, y1, x2, y2
-    cx, cy, w, h = preds[:, 0], preds[:, 1], preds[:, 2], preds[:, 3]
-    x1 = cx - w / 2
-    y1 = cy - h / 2
-    x2 = cx + w / 2
-    y2 = cy + h / 2
-
-    # Remove padding and rescale to original image coordinates
-    x1 = (x1 - pad_w) / scale
-    y1 = (y1 - pad_h) / scale
-    x2 = (x2 - pad_w) / scale
-    y2 = (y2 - pad_h) / scale
 
     # Clip to image bounds
     x1 = np.clip(x1, 0, img_w)
@@ -149,9 +132,13 @@ def postprocess(output: np.ndarray, scale: float, pad_w: int, pad_h: int,
 
     boxes = np.stack([x1, y1, x2, y2], axis=1)
 
-    # NMS
-    keep = nms(boxes, scores, iou_thr)
-    return boxes[keep][:MAX_DET], scores[keep][:MAX_DET]
+    # NMS only needed for YOLOv8 (YOLO26 e2e has built-in NMS)
+    if not is_e2e:
+        keep = nms(boxes, scores, iou_thr)
+        boxes = boxes[keep][:MAX_DET]
+        scores = scores[keep][:MAX_DET]
+
+    return boxes, scores
 
 
 def nms(boxes: np.ndarray, scores: np.ndarray, iou_thr: float) -> list[int]:
