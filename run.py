@@ -244,8 +244,9 @@ def main():
     parser.add_argument("--input", required=True, help="Directory with img_*.jpg files")
     parser.add_argument("--output", required=True, help="Output predictions.json path")
     parser.add_argument("--no-tta", action="store_true", help="Disable all TTA (faster)")
-    parser.add_argument("--use-knn", action="store_true", help="Use kNN embedding matching instead of linear head")
-    parser.add_argument("--extract-layer", type=int, default=None, help="DINOv2 block for embeddings (0-11, None=final)")
+    parser.add_argument("--use-knn", action="store_true", default=True, help="Use kNN embedding matching instead of linear head")
+    parser.add_argument("--no-knn", action="store_true", help="Force linear head instead of kNN")
+    parser.add_argument("--extract-layer", type=int, default=11, help="DINOv2 block for embeddings (0-11, None=final)")
     args = parser.parse_args()
 
     input_dir = Path(args.input)
@@ -265,12 +266,13 @@ def main():
     detector = YOLODetector(YOLO_WEIGHTS)
 
     print("Loading DINOv2 classifier...")
+    use_knn = args.use_knn and not args.no_knn
     classifier = DINOClassifier(
         model_path=DINO_WEIGHTS,
         head_path=CLS_HEAD,
-        embeddings_path=REF_EMBEDDINGS if args.use_knn else None,
+        embeddings_path=REF_EMBEDDINGS if use_knn else None,
         device=device,
-        use_knn=args.use_knn,
+        use_knn=use_knn,
         extract_layer=args.extract_layer,
     )
 

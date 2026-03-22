@@ -69,6 +69,20 @@ if [[ ! -f "$CLS_HEAD" ]]; then
 fi
 echo "Classifier head: $CLS_HEAD"
 
+REF_EMBEDDINGS="$MODEL_DIR/ref_embeddings.npy"
+REF_CATIDS="$MODEL_DIR/ref_catids.json"
+if [[ ! -f "$REF_EMBEDDINGS" ]]; then
+    echo "ERROR: Reference embeddings not found: $REF_EMBEDDINGS"
+    echo "  Run: sbatch scripts/build_embeddings.slurm"
+    exit 1
+fi
+if [[ ! -f "$REF_CATIDS" ]]; then
+    echo "ERROR: Reference cat IDs not found: $REF_CATIDS"
+    exit 1
+fi
+echo "Ref embeddings : $REF_EMBEDDINGS"
+echo "Ref cat IDs    : $REF_CATIDS"
+
 # ── Build staging directory ───────────────────────────────────────────────────
 echo ""
 echo "Building staging directory..."
@@ -80,11 +94,14 @@ cp "$ROOT/dino_classifier.py"      "$STAGING/dino_classifier.py"
 cp "$BEST_ONNX"                    "$STAGING/model/best.onnx"
 cp "$DINO_PT"                      "$STAGING/model/vit_base_patch14_dinov2_fp16.pth"
 cp "$CLS_HEAD"                     "$STAGING/model/cls_head.npy"
+cp "$REF_EMBEDDINGS"               "$STAGING/model/ref_embeddings.npy"
+cp "$REF_CATIDS"                   "$STAGING/model/ref_catids.json"
 
 # ── Size check ────────────────────────────────────────────────────────────────
 yolo_mb=$(du -sm "$STAGING/model/best.onnx" | awk '{print $1}')
 dino_mb=$(du -sm "$STAGING/model/vit_base_patch14_dinov2_fp16.pth" | awk '{print $1}')
 head_mb=$(du -sm "$STAGING/model/cls_head.npy" | awk '{print $1}')
+emb_mb=$(du -sm "$STAGING/model/ref_embeddings.npy" | awk '{print $1}')
 total_mb=$(du -sm "$STAGING" | awk '{print $1}')
 
 echo ""
@@ -92,6 +109,7 @@ echo "Size budget:"
 printf "  %-36s %5s MB\n" "best.onnx"                          "$yolo_mb"
 printf "  %-36s %5s MB\n" "$(basename "$DINO_PT") → dino"     "$dino_mb"
 printf "  %-36s %5s MB\n" "cls_head.npy"                       "$head_mb"
+printf "  %-36s %5s MB\n" "ref_embeddings.npy"                 "$emb_mb"
 echo "  ─────────────────────────────────────────────"
 printf "  %-36s %5s MB  (limit: %s MB)\n" "Total (uncompressed)" "$total_mb" "$MAX_SIZE_MB"
 
