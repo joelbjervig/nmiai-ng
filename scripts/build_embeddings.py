@@ -85,16 +85,20 @@ def main():
     model.load_state_dict(state_dict)
     model = model.to(args.device).eval().half()
 
-    # Optional: hook for intermediate layer extraction
-    intermediate_output = {}
+    def forward_to_layer(x, layer_idx):
+        """Run ViT forward up to layer_idx, return CLS token."""
+        x = model.patch_embed(x)
+        x = model._pos_embed(x)
+        x = model.patch_drop(x)
+        x = model.norm_pre(x)
+        for i, block in enumerate(model.blocks):
+            x = block(x)
+            if i == layer_idx:
+                break
+        return x[:, 0, :]
+
     if args.layer is not None:
-        total_blocks = len(model.blocks)
-        print(f"Extracting from block {args.layer}/{total_blocks-1}")
-
-        def hook_fn(module, input, output):
-            intermediate_output["features"] = output[:, 0, :]  # CLS token
-
-        model.blocks[args.layer].register_forward_hook(hook_fn)
+        print(f"Extracting from block {args.layer}/{len(model.blocks)-1}")
 
     transform = transforms.Compose([
         PadToSquare(),
@@ -155,8 +159,10 @@ def main():
             batch = crops[i:i + args.batch_size]
             tensors = torch.stack([transform(c) for c in batch]).to(args.device).half()
             with torch.no_grad():
-                output = model(tensors)
-                features = intermediate_output["features"] if args.layer is not None else output
+                if args.layer is not None:
+                    features = forward_to_layer(tensors, args.layer)
+                else:
+                    features = model(tensors)
                 features = F.normalize(features, p=2, dim=-1)
             all_embs.append(features)
 

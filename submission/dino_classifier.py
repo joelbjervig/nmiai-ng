@@ -72,6 +72,19 @@ class DINOClassifier:
         self.model = self.model.to(device).eval().half()
 
         embed_dim = self.model.num_features
+
+        # Register hook for intermediate layer extraction
+        if extract_layer is not None:
+            total_blocks = len(self.model.blocks)
+            if extract_layer < 0 or extract_layer >= total_blocks:
+                raise ValueError(f"extract_layer={extract_layer} out of range [0, {total_blocks-1}]")
+
+            def hook_fn(module, input, output):
+                # ViT block output: (B, N_tokens, D) — take CLS token (index 0)
+                self._intermediate_output = output[:, 0, :]
+
+            self.model.blocks[extract_layer].register_forward_hook(hook_fn)
+            print(f"  Extracting features from block {extract_layer}/{total_blocks-1}")
         self.head = None
         self.ref_embeddings = None
         self.label_to_catid = None
@@ -122,23 +135,6 @@ class DINOClassifier:
 
         print(f"DINOClassifier ready: {model_name}, mode={self._mode}, device={device}")
 
-    def _forward_to_layer(self, x: torch.Tensor) -> torch.Tensor:
-        """Run ViT forward up to extract_layer, return CLS token embedding."""
-        # Patch embed + pos embed (timm ViT internals)
-        x = self.model.patch_embed(x)
-        x = self.model._pos_embed(x)
-        x = self.model.patch_drop(x)
-        x = self.model.norm_pre(x)
-
-        # Run blocks up to and including extract_layer
-        for i, block in enumerate(self.model.blocks):
-            x = block(x)
-            if i == self.extract_layer:
-                break
-
-        # CLS token
-        return x[:, 0, :]
-
     @torch.no_grad()
     def _embed(self, crops: list[Image.Image], batch_size: int = 64) -> torch.Tensor:
         """Embed crops → (N, D) L2-normalized FP16 tensor."""
@@ -147,10 +143,8 @@ class DINOClassifier:
             batch_crops = crops[i:i + batch_size]
             tensors = [self.transform(c.convert("RGB")) for c in batch_crops]
             batch = torch.stack(tensors).to(self.device).half()
-            if self.extract_layer is not None:
-                features = self._forward_to_layer(batch)
-            else:
-                features = self.model(batch)
+            output = self.model(batch)  # also triggers hook if extract_layer is set
+            features = self._intermediate_output if self.extract_layer is not None else output
             features = F.normalize(features, p=2, dim=-1)
             all_embs.append(features)
         return torch.cat(all_embs, dim=0)

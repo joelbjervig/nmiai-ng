@@ -41,11 +41,6 @@ WBF_IOU_THR = 0.55
 WBF_SKIP_BOX_THR = 0.01
 USE_CROP_TTA = True
 
-# SAHI-style tiled inference
-USE_TILES = True
-TILE_SIZE = 800       # tile dimensions (pixels)
-TILE_OVERLAP = 0.2    # overlap ratio between tiles
-
 
 def parse_image_id(filename: str) -> int:
     """img_00042.jpg → 42"""
@@ -191,36 +186,8 @@ class YOLODetector:
         """Single-pass detection at default scale."""
         return self._run_single(img_rgb, DETECT_SCALES[0] if DETECT_SCALES else 1280)
 
-    def _get_tiles(self, img_h: int, img_w: int):
-        """Generate tile coordinates [(x1, y1, x2, y2), ...] with overlap."""
-        tiles = []
-        stride = int(TILE_SIZE * (1 - TILE_OVERLAP))
-        for y in range(0, img_h, stride):
-            for x in range(0, img_w, stride):
-                x2 = min(x + TILE_SIZE, img_w)
-                y2 = min(y + TILE_SIZE, img_h)
-                # Ensure minimum tile size (at least half of TILE_SIZE)
-                if (x2 - x) < TILE_SIZE // 2 or (y2 - y) < TILE_SIZE // 2:
-                    continue
-                tiles.append((x, y, x2, y2))
-        return tiles
-
-    def _add_detections(self, boxes, scores, img_w, img_h, all_boxes, all_scores, all_labels,
-                        offset_x=0, offset_y=0):
-        """Normalize boxes to [0,1] in full image coords and append to lists."""
-        if len(boxes) == 0:
-            return
-        boxes_norm = boxes.copy()
-        # Shift from tile coords to full image coords
-        boxes_norm[:, [0, 2]] = (boxes_norm[:, [0, 2]] + offset_x) / img_w
-        boxes_norm[:, [1, 3]] = (boxes_norm[:, [1, 3]] + offset_y) / img_h
-        boxes_norm = np.clip(boxes_norm, 0.0, 1.0)
-        all_boxes.append(boxes_norm)
-        all_scores.append(scores)
-        all_labels.append(np.zeros(len(scores)))
-
     def detect_tta(self, img_rgb: np.ndarray):
-        """Full image + flip + tiled inference, merged with WBF."""
+        """Multi-scale + flip TTA with Weighted Boxes Fusion."""
         img_h, img_w = img_rgb.shape[:2]
 
         all_boxes = []
@@ -228,9 +195,16 @@ class YOLODetector:
         all_labels = []
 
         for scale in DETECT_SCALES:
-            # Full image
+            # Original
             boxes, scores = self._run_single(img_rgb, scale)
-            self._add_detections(boxes, scores, img_w, img_h, all_boxes, all_scores, all_labels)
+            if len(boxes) > 0:
+                boxes_norm = boxes.copy()
+                boxes_norm[:, [0, 2]] /= img_w
+                boxes_norm[:, [1, 3]] /= img_h
+                boxes_norm = np.clip(boxes_norm, 0.0, 1.0)
+                all_boxes.append(boxes_norm)
+                all_scores.append(scores)
+                all_labels.append(np.zeros(len(scores)))
 
             # Horizontal flip
             if DETECT_FLIP:
@@ -241,20 +215,11 @@ class YOLODetector:
                     boxes_f_norm[:, [0, 2]] /= img_w
                     boxes_f_norm[:, [1, 3]] /= img_h
                     boxes_f_norm = np.clip(boxes_f_norm, 0.0, 1.0)
+                    # Unflip x coordinates
                     boxes_f_norm[:, [0, 2]] = 1.0 - boxes_f_norm[:, [2, 0]]
                     all_boxes.append(boxes_f_norm)
                     all_scores.append(scores_f)
                     all_labels.append(np.zeros(len(scores_f)))
-
-        # Tiled inference (SAHI-style)
-        if USE_TILES:
-            tiles = self._get_tiles(img_h, img_w)
-            for tx1, ty1, tx2, ty2 in tiles:
-                tile = img_rgb[ty1:ty2, tx1:tx2].copy()
-                boxes_t, scores_t = self._run_single(tile, DETECT_SCALES[0])
-                self._add_detections(boxes_t, scores_t, img_w, img_h,
-                                     all_boxes, all_scores, all_labels,
-                                     offset_x=tx1, offset_y=ty1)
 
         if not all_boxes:
             return np.zeros((0, 4)), np.array([])
