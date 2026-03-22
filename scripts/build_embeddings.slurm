@@ -18,6 +18,8 @@ set -euo pipefail
 WEIGHTS=${WEIGHTS:-model/vit_base_patch14_dinov2_fp16.pth}
 BATCH_SIZE=${BATCH_SIZE:-64}
 IMG_SIZE=${IMG_SIZE:-518}
+LAYER=${LAYER:-11}
+MAX_PER_CLASS=${MAX_PER_CLASS:-10}
 
 cd "${SLURM_SUBMIT_DIR}"
 
